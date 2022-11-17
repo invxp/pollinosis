@@ -23,11 +23,11 @@ func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Re
 		sm.event.LogUpdated(entry.Cmd, entry.Index)
 	}
 
-	kv := &kv{}
-	if err := json.Unmarshal(entry.Cmd, kv); err != nil {
+	val := &kv{}
+	if err := json.Unmarshal(entry.Cmd, val); err != nil {
 		return statemachine.Result{}, err
 	}
-	sm.kv.Store(kv.Key, kv.Value)
+	sm.kv.Store(val.Key, val.Value)
 
 	return statemachine.Result{Value: uint64(len(entry.Cmd))}, nil
 }
@@ -43,7 +43,7 @@ func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
 	return val, nil
 }
 
-func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, collection statemachine.ISnapshotFileCollection, i <-chan struct{}) error {
+func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISnapshotFileCollection, _ <-chan struct{}) error {
 	var lst []kv
 	sm.kv.Range(func(key, value any) bool {
 		lst = append(lst, kv{key.(string), value.(string)})
@@ -60,7 +60,7 @@ func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, collection statema
 	return err
 }
 
-func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, files []statemachine.SnapshotFile, i <-chan struct{}) error {
+func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statemachine.SnapshotFile, _ <-chan struct{}) error {
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return err

@@ -11,10 +11,8 @@ import (
 	"github.com/lni/dragonboat/v4/statemachine"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 const (
@@ -38,20 +36,6 @@ func uint64ToByte(value uint64) []byte {
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, value)
 	return data
-}
-
-func fullPath() string {
-	file, err := exec.LookPath(os.Args[0])
-	if err != nil {
-		panic(err)
-	}
-
-	path, err := filepath.Abs(file)
-	if err != nil {
-		panic(err)
-	}
-
-	return path[0:strings.LastIndex(path, string(os.PathSeparator))] + string(os.PathSeparator)
 }
 
 func currentDirName(dir string) string {
@@ -124,10 +108,10 @@ func renameDirFile(oldPath, newPath string) {
 }
 
 func syncDir(dir string) {
+	//windows are not working
 	if runtime.GOOS == "windows" {
 		return
 	}
-
 	fileInfo, err := os.Stat(dir)
 	if err != nil {
 		panic(err)
@@ -280,7 +264,7 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 	sm.lastApplied = newLastApplied
 	_ = sm.storage.Close()
 
-	dir := filepath.Join(fullPath(), fmt.Sprintf("%s.%d.%d", databaseName, sm.ReplicaID, sm.ShardID))
+	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.ReplicaID, sm.ShardID)
 	databaseDir := filepath.Join(dir, uuid.NewString())
 	oldDirName := currentDirName(filepath.Join(dir, current))
 
@@ -348,7 +332,7 @@ func (sm *onDiskStateMachine) PrepareSnapshot() (interface{}, error) {
 }
 
 func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (idx uint64, err error) {
-	dir := filepath.Join(fullPath(), fmt.Sprintf("%s.%d.%d", databaseName, sm.ReplicaID, sm.ShardID))
+	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.ReplicaID, sm.ShardID)
 
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		panic(err)

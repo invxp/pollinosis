@@ -72,6 +72,14 @@ func TestServer_StartAndReady(t *testing.T) {
 			t.Fatal("leaderID id diff:", checkLeaders[i], checkLeaders[i+1])
 		}
 	}
+
+	for _, srv := range servers {
+		srv.Stop()
+	}
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+	}
 }
 
 func TestServer_StartOnDiskAndReadyGetSet(t *testing.T) {
@@ -82,6 +90,8 @@ func TestServer_StartOnDiskAndReadyGetSet(t *testing.T) {
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
 		members[id] = fmt.Sprintf("0.0.0.0:%d", address)
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+		_ = os.RemoveAll(fmt.Sprintf("%s.%d.%d", databaseName, id, 100))
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
@@ -144,73 +154,14 @@ func TestServer_StartOnDiskAndReadyGetSet(t *testing.T) {
 	if value, err = servers[leaderID-1].Get(time.Second*10, "Key"); err != nil || value != want {
 		t.Fatal("value was diff", err, value, want)
 	}
-}
-
-func TestServer_Stop(t *testing.T) {
-	var servers []*Server
-
-	total := uint64(3)
-	members := make(map[uint64]string)
-
-	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		members[id] = fmt.Sprintf("0.0.0.0:%d", address)
-		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
-	}
-
-	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		servers = append(servers, New(
-			id,
-			100,
-			10,
-			1,
-			200,
-			0,
-			100,
-			members[id],
-			fmt.Sprintf("raft_%d", id),
-			false,
-			members,
-		))
-	}
 
 	for _, srv := range servers {
-		if err := srv.Start(); err != nil {
-			t.Fatal(err)
-		}
+		srv.Stop()
 	}
 
-	var leaderID uint64
-	var err error
-	var checkLeaders []uint64
-	var mu sync.Mutex
-
-	wg := sync.WaitGroup{}
-	wg.Add(len(servers))
-
-	for _, server := range servers {
-		go func(server *Server) {
-			defer wg.Done()
-			leaderID, _, err = server.Ready(time.Second * 5)
-			if err != nil {
-				t.Error(err)
-			}
-			mu.Lock()
-			checkLeaders = append(checkLeaders, leaderID)
-			mu.Unlock()
-			t.Log("leaderID voted:", checkLeaders)
-		}(server)
-	}
-
-	wg.Wait()
-
-	for i := 0; i < len(checkLeaders)-1; i++ {
-		if checkLeaders[i] != checkLeaders[i+1] {
-			t.Fatal("leaderID id diff:", checkLeaders[i], checkLeaders[i+1])
-		}
-	}
-
-	for _, server := range servers {
-		server.Stop()
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+		_ = os.RemoveAll(fmt.Sprintf("%s.%d.%d", databaseName, id, 100))
 	}
 }
 
@@ -298,6 +249,14 @@ func TestServer_GetSet(t *testing.T) {
 	if value, err = servers[leader].Get(time.Second*10, "Key"); err != nil || value != wantValue {
 		t.Fatal(err, value, wantValue)
 	}
+
+	for _, srv := range servers {
+		srv.Stop()
+	}
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+	}
 }
 
 func TestServer_TransferLeader(t *testing.T) {
@@ -380,6 +339,14 @@ func TestServer_TransferLeader(t *testing.T) {
 		if newLeader != servers[follower].ReplicaID {
 			t.Fatal("leaderID transfer failed", "current", newLeader, "want", servers[follower].ReplicaID)
 		}
+	}
+
+	for _, srv := range servers {
+		srv.Stop()
+	}
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
 	}
 }
 
@@ -517,6 +484,16 @@ func TestServer_AddRemoveNodeAndGetValue(t *testing.T) {
 	}
 
 	newServer.Stop()
+
+	for _, srv := range servers {
+		srv.Stop()
+	}
+
+	_ = os.RemoveAll(fmt.Sprintf("raft_4"))
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+	}
 }
 
 func TestServer_Snapshot(t *testing.T) {
@@ -527,7 +504,7 @@ func TestServer_Snapshot(t *testing.T) {
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
 		members[id] = fmt.Sprintf("0.0.0.0:%d", address)
-		//_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
@@ -598,4 +575,11 @@ func TestServer_Snapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	for _, srv := range servers {
+		srv.Stop()
+	}
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+	}
 }

@@ -145,13 +145,14 @@ func (s *Server) Get(timeout time.Duration, key string) (string, error) {
 		return "", err
 	}
 
-	result, ok := data.([]byte)
-
-	if !ok {
+	switch result := data.(type) {
+	case string:
+		return result, nil
+	case []byte:
+		return string(result), nil
+	default:
 		return "", fmt.Errorf("value data error, key: %s, value: %v", key, data)
 	}
-
-	return string(result), nil
 }
 
 func (s *Server) NodeInfo() *dragonboat.NodeHostInfo {
@@ -185,7 +186,7 @@ func (s *Server) TransferLeader(timeout time.Duration, targetReplicaID uint64) e
 		}
 	}
 
-	if err == nil {
+	if err == nil && leaderId != targetReplicaID {
 		err = fmt.Errorf("leader transfer fail, want: %d, current: %d", targetReplicaID, leaderId)
 	}
 
