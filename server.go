@@ -13,58 +13,40 @@ type kv struct {
 	Value string `json:"value"`
 }
 
-func (s *Server) Start(listener ...EventListener) error {
-	if s.raft != nil {
-		return fmt.Errorf("raft was already started")
-	}
-
-	if len(listener) > 0 {
-		s.event = listener[0]
-	}
-
-	raft, err := dragonboat.NewNodeHost(s.hostConfig)
-	if err != nil {
-		return err
-	}
-
-	s.raft = raft
-
-	s.stateMachine = &defaultStateMachine{s}
-
-	return s.raft.StartReplica(s.members, s.join, s.stateMachine.(*defaultStateMachine).stateMachine, s.raftConfig)
+// Start 启动Raft实例
+func (p *Pollinosis) Start(listener ...EventListener) error {
+	p.stateMachine = &defaultStateMachine{p}
+	return p.start(listener...)
 }
 
-func (s *Server) StartOnDisk(listener ...EventListener) error {
-	if s.raft != nil {
-		return fmt.Errorf("raft was already started")
-	}
-
-	if len(listener) > 0 {
-		s.event = listener[0]
-	}
-
-	raft, err := dragonboat.NewNodeHost(s.hostConfig)
-	if err != nil {
-		return err
-	}
-
-	s.raft = raft
-
-	s.stateMachine = &onDiskStateMachine{s, 0, storage{}, false}
-
-	return s.raft.StartOnDiskReplica(s.members, s.join, s.stateMachine.(*onDiskStateMachine).newStateMachine, s.raftConfig)
+// StartOnDisk 启动Raft实例(PebbleDB)
+func (p *Pollinosis) StartOnDisk(listener ...EventListener) error {
+	p.stateMachine = &onDiskStateMachine{p, 0, storage{}, false}
+	return p.start(listener...)
 }
 
-func (s *Server) Stop() {
-	if s.raft == nil {
+// Stop 停止服务
+func (p *Pollinosis) Stop() {
+	if p.raft == nil {
 		return
 	}
-	s.raft.Close()
-	s.raft = nil
+	p.raft.Close()
+	p.raft = nil
 }
 
-func (s *Server) Ready(timeout time.Duration) (leaderId uint64, isLeader bool, err error) {
-	if s.raft == nil {
+// ShardID 返回集群ID
+func (p *Pollinosis) ShardID() uint64 {
+	return p.shardID
+}
+
+// ReplicaID 返回节点ID
+func (p *Pollinosis) ReplicaID() uint64 {
+	return p.replicaID
+}
+
+// Ready 是否已经加入到集群内并可以进行服务
+func (p *Pollinosis) Ready(timeout time.Duration) (leaderId uint64, isLeader bool, err error) {
+	if p.raft == nil {
 		return leaderId, isLeader, fmt.Errorf("raft was nil")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -78,20 +60,20 @@ func (s *Server) Ready(timeout time.Duration) (leaderId uint64, isLeader bool, e
 		case <-ctx.Done():
 			return leaderId, isLeader, ctx.Err()
 		default:
-			leaderId, _, valid, err = s.raft.GetLeaderID(s.ShardID)
+			leaderId, _, valid, err = p.raft.GetLeaderID(p.shardID)
 		}
 	}
 
-	if s.join {
+	if p.join {
 		valid = false
 		for !valid {
 			select {
 			case <-ctx.Done():
-				return leaderId, leaderId == s.ReplicaID, ctx.Err()
+				return leaderId, leaderId == p.replicaID, ctx.Err()
 			default:
-				info := s.raft.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
+				info := p.raft.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
 				for _, nodeInfo := range info.ShardInfoList {
-					if nodeInfo.ShardID != s.ShardID {
+					if nodeInfo.ShardID != p.shardID {
 						continue
 					}
 					valid = len(nodeInfo.Nodes) > 0
@@ -100,11 +82,13 @@ func (s *Server) Ready(timeout time.Duration) (leaderId uint64, isLeader bool, e
 		}
 	}
 
-	return leaderId, leaderId == s.ReplicaID, err
+	return leaderId, leaderId == p.replicaID, err
 }
 
-func (s *Server) Set(timeout time.Duration, key, value string) error {
-	if s.raft == nil {
+// Set 设置KV
+// 并不是Leader才可以发起,集群内部任意角色都可以
+func (p *Pollinosis) Set(timeout time.Duration, key, value string) error {
+	if p.raft == nil {
 		return fmt.Errorf("raft was nil")
 	}
 
@@ -115,20 +99,23 @@ func (s *Server) Set(timeout time.Duration, key, value string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	session := s.raft.GetNoOPSession(s.ShardID)
+	session := p.raft.GetNoOPSession(p.shardID)
 	val := &kv{key, value}
 
 	bytes, err := json.Marshal(val)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	_, err = s.raft.SyncPropose(ctx, session, bytes)
+	_, err = p.raft.SyncPropose(ctx, session, bytes)
 	return err
 }
 
-func (s *Server) Get(timeout time.Duration, key string) (string, error) {
-	if s.raft == nil {
+// Get 获取KV
+// 当前使用的是线性一致性读
+// 好处是保证一致性的前提下减缓Leader的读数据的IO压力
+func (p *Pollinosis) Get(timeout time.Duration, key string) (string, error) {
+	if p.raft == nil {
 		return "", fmt.Errorf("raft was nil")
 	}
 
@@ -139,7 +126,7 @@ func (s *Server) Get(timeout time.Duration, key string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	data, err := s.raft.SyncRead(ctx, s.ShardID, key)
+	data, err := p.raft.SyncRead(ctx, p.shardID, key)
 
 	if err != nil {
 		return "", err
@@ -151,22 +138,25 @@ func (s *Server) Get(timeout time.Duration, key string) (string, error) {
 	case []byte:
 		return string(result), nil
 	default:
-		return "", fmt.Errorf("value data error, key: %s, value: %v", key, data)
+		return "", fmt.Errorf("value data error, key: %v, value: %v", key, data)
 	}
 }
 
-func (s *Server) NodeInfo() *dragonboat.NodeHostInfo {
-	if s.raft == nil {
+// NodeInfo 获取集群内所有节点信息
+func (p *Pollinosis) NodeInfo() *dragonboat.NodeHostInfo {
+	if p.raft == nil {
 		return nil
 	}
-	return s.raft.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
+	return p.raft.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
 }
 
-func (s *Server) TransferLeader(timeout time.Duration, targetReplicaID uint64) error {
-	if s.raft == nil {
+// TransferLeader 切换Leader
+// 建议通过Leader发起
+func (p *Pollinosis) TransferLeader(timeout time.Duration, targetReplicaID uint64) error {
+	if p.raft == nil {
 		return fmt.Errorf("raft was nil")
 	}
-	err := s.raft.RequestLeaderTransfer(s.ShardID, targetReplicaID)
+	err := p.raft.RequestLeaderTransfer(p.shardID, targetReplicaID)
 	if err != nil {
 		return err
 	}
@@ -182,7 +172,7 @@ func (s *Server) TransferLeader(timeout time.Duration, targetReplicaID uint64) e
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			leaderId, _, _, err = s.raft.GetLeaderID(s.ShardID)
+			leaderId, _, _, err = p.raft.GetLeaderID(p.shardID)
 		}
 	}
 
@@ -193,20 +183,50 @@ func (s *Server) TransferLeader(timeout time.Duration, targetReplicaID uint64) e
 	return err
 }
 
-func (s *Server) AddReplica(timeout time.Duration, replicaID uint64, target string, configChangeIndex uint64) error {
-	if s.raft == nil {
+// AddReplica 新增一个节点
+// 被增加的节点join属性需设置true
+func (p *Pollinosis) AddReplica(timeout time.Duration, replicaID uint64, target string, configChangeIndex uint64) error {
+	if p.raft == nil {
 		return fmt.Errorf("raft was nil")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return s.raft.SyncRequestAddReplica(ctx, s.ShardID, replicaID, target, configChangeIndex)
+	return p.raft.SyncRequestAddReplica(ctx, p.shardID, replicaID, target, configChangeIndex)
 }
 
-func (s *Server) DeleteReplica(timeout time.Duration, replicaID uint64, configChangeIndex uint64) error {
-	if s.raft == nil {
+// DeleteReplica 删除一个节点
+func (p *Pollinosis) DeleteReplica(timeout time.Duration, replicaID uint64, configChangeIndex uint64) error {
+	if p.raft == nil {
 		return fmt.Errorf("raft was nil")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return s.raft.SyncRequestDeleteReplica(ctx, s.ShardID, replicaID, configChangeIndex)
+	return p.raft.SyncRequestDeleteReplica(ctx, p.shardID, replicaID, configChangeIndex)
+}
+
+// start 启动实际的Raft服务
+func (p *Pollinosis) start(listener... EventListener) error {
+	if p.raft != nil {
+		return fmt.Errorf("raft was already started")
+	}
+
+	if len(listener) > 0 {
+		p.event = listener[0]
+	}
+
+	raft, err := dragonboat.NewNodeHost(p.hostConfig)
+	if err != nil {
+		return err
+	}
+
+	p.raft = raft
+
+	switch sm := p.stateMachine.(type) {
+	case *defaultStateMachine:
+		return p.raft.StartReplica(p.members, p.join, sm.stateMachine, p.raftConfig)
+	case *onDiskStateMachine:
+		return p.raft.StartOnDiskReplica(p.members, p.join, sm.stateMachine, p.raftConfig)
+	default:
+		return fmt.Errorf("unknown driver type: %v", sm)
+	}
 }

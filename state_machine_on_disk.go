@@ -26,10 +26,14 @@ const (
 )
 
 type onDiskStateMachine struct {
-	*Server
+	*Pollinosis
 	lastApplied uint64
 	storage     storage
 	closed      bool
+}
+
+func fatal(v interface{}) {
+	panic(v)
 }
 
 func uint64ToByte(value uint64) []byte {
@@ -41,33 +45,33 @@ func uint64ToByte(value uint64) []byte {
 func currentDirName(dir string) string {
 	f, err := os.OpenFile(dir, os.O_RDONLY, 0755)
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	defer func() {
 		if err = f.Close(); err != nil {
-			panic(err)
+			fatal(err)
 		}
 	}()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	if len(data) <= 8 {
-		panic("corrupted content")
+		fatal("corrupted content")
 	}
 
 	crc := data[:8]
 	content := data[8:]
 	h := md5.New()
 	if _, err = h.Write(content); err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	if !bytes.Equal(crc, h.Sum(nil)[:8]) {
-		panic("corrupted content with not matched crc")
+		fatal("corrupted content with not matched crc")
 	}
 
 	return string(content)
@@ -76,34 +80,34 @@ func currentDirName(dir string) string {
 func createDirFile(dirFileName string, dirName string) {
 	h := md5.New()
 	if _, err := h.Write([]byte(dirName)); err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	f, err := os.Create(dirFileName)
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	defer func() {
 		if err = f.Close(); err != nil {
-			panic(err)
+			fatal(err)
 		}
 	}()
 
 	if _, err = f.Write(h.Sum(nil)[:8]); err != nil {
-		panic(err)
+		fatal(err)
 	}
 	if _, err = f.Write([]byte(dirName)); err != nil {
-		panic(err)
+		fatal(err)
 	}
 	if err = f.Sync(); err != nil {
-		panic(err)
+		fatal(err)
 	}
 }
 
 func renameDirFile(oldPath, newPath string) {
 	if err := os.Rename(oldPath, newPath); err != nil {
-		panic(err)
+		fatal(err)
 	}
 }
 
@@ -114,31 +118,31 @@ func syncDir(dir string) {
 	}
 	fileInfo, err := os.Stat(dir)
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 	if !fileInfo.IsDir() {
-		panic("not a dir")
+		fatal("not a dir")
 	}
 	df, err := os.Open(filepath.Clean(dir))
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	defer func() {
 		if err = df.Close(); err != nil {
-			panic(err)
+			fatal(err)
 		}
 	}()
 
 	if err = df.Sync(); err != nil {
-		panic(err)
+		fatal(err)
 	}
 }
 
 func cleanDir(dir, excludeDir string) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	for _, fi := range files {
@@ -150,7 +154,7 @@ func cleanDir(dir, excludeDir string) {
 		if toDelete != excludeDir {
 			fmt.Printf("removing %s\n", toDelete)
 			if err = os.RemoveAll(toDelete); err != nil {
-				panic(err)
+				fatal(err)
 			}
 		}
 	}
@@ -163,7 +167,7 @@ func fileExists(fn string) bool {
 	return true
 }
 
-func (sm *onDiskStateMachine) newStateMachine(_, _ uint64) statemachine.IOnDiskStateMachine {
+func (sm *onDiskStateMachine) stateMachine(_, _ uint64) statemachine.IOnDiskStateMachine {
 	return sm
 }
 
@@ -171,11 +175,11 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 	lastAppliedIndex := entry[len(entry)-1].Index
 
 	if sm.closed {
-		panic("update called after Close()")
+		fatal("update called after Close()")
 	}
 
 	if sm.lastApplied >= lastAppliedIndex {
-		panic("lastApplied not moving forward")
+		fatal("lastApplied not moving forward")
 	}
 
 	sm.lastApplied = lastAppliedIndex
@@ -184,19 +188,17 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 		for i, e := range entry {
 			val := &kv{}
 			if err := json.Unmarshal(e.Cmd, val); err != nil {
-				panic(err)
+				fatal(err)
 			}
 			if err := batch.Set([]byte(val.Key), []byte(val.Value), &pebble.WriteOptions{Sync: false}); err != nil {
-				panic(err)
+				fatal(err)
 			}
 			entry[i].Result = statemachine.Result{Value: uint64(len(entry[i].Cmd))}
-			if sm.event != nil {
-				sm.event.LogUpdated(entry[i].Cmd, entry[i].Index)
-			}
+			sm.event.LogUpdated(entry[i].Cmd, entry[i].Index)
 		}
 
 		if err := batch.Set([]byte(innerPrefix+appliedIndexKeyName), uint64ToByte(lastAppliedIndex), &pebble.WriteOptions{Sync: false}); err != nil {
-			panic(err)
+			fatal(err)
 		}
 	})
 
@@ -209,7 +211,7 @@ func (sm *onDiskStateMachine) Sync() (err error) {
 
 func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan struct{}) error {
 	if sm.closed {
-		panic("prepare snapshot called after Close()")
+		fatal("prepare snapshot called after Close()")
 	}
 
 	sm.storage.mu.RLock()
@@ -234,19 +236,19 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 	}
 
 	if _, err := w.Write(uint64ToByte(uint64(len(values)))); err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	for _, kv := range values {
 		data, err := json.Marshal(kv)
 		if err != nil {
-			panic(err)
+			fatal(err)
 		}
 		if _, err = w.Write(uint64ToByte(uint64(len(data)))); err != nil {
-			panic(err)
+			fatal(err)
 		}
 		if _, err = w.Write(data); err != nil {
-			panic(err)
+			fatal(err)
 		}
 	}
 
@@ -255,16 +257,16 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 
 func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}) (err error) {
 	if sm.closed {
-		panic("recover from snapshot called after Close()")
+		fatal("recover from snapshot called after Close()")
 	}
 	newLastApplied := sm.queryAppliedIndex()
 	if sm.lastApplied > newLastApplied {
-		panic("last applied not moving forward")
+		fatal("last applied not moving forward")
 	}
 	sm.lastApplied = newLastApplied
 	_ = sm.storage.Close()
 
-	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.ReplicaID, sm.ShardID)
+	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.replicaID, sm.shardID)
 	databaseDir := filepath.Join(dir, uuid.NewString())
 	oldDirName := currentDirName(filepath.Join(dir, current))
 
@@ -275,37 +277,37 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 		Cache:               cache,
 	}
 	if err = os.MkdirAll(databaseDir, 0755); err != nil {
-		panic(err)
+		fatal(err)
 	}
 	sm.storage.db, err = pebble.Open(databaseDir, opts)
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 	cache.Unref()
 
 	sz := make([]byte, 8)
 	if _, err = io.ReadFull(r, sz); err != nil {
-		panic(err)
+		fatal(err)
 	}
 	totalSize := binary.LittleEndian.Uint64(sz)
 
 	err = sm.storage.Batch(func(batch *pebble.Batch) {
 		for i := uint64(0); i < totalSize; i++ {
 			if _, err = io.ReadFull(r, sz); err != nil {
-				panic(err)
+				fatal(err)
 			}
 			toRead := binary.LittleEndian.Uint64(sz)
 
 			data := make([]byte, toRead)
 			if _, err = io.ReadFull(r, data); err != nil {
-				panic(err)
+				fatal(err)
 			}
 			val := &kv{}
 			if err = json.Unmarshal(data, val); err != nil {
-				panic(err)
+				fatal(err)
 			}
 			if err = batch.Set([]byte(val.Key), []byte(val.Value), &pebble.WriteOptions{Sync: false}); err != nil {
-				panic(err)
+				fatal(err)
 			}
 		}
 	})
@@ -316,7 +318,7 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 
 	parent := filepath.Dir(oldDirName)
 	if err = os.RemoveAll(oldDirName); err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	syncDir(parent)
@@ -326,16 +328,16 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 
 func (sm *onDiskStateMachine) PrepareSnapshot() (interface{}, error) {
 	if sm.closed {
-		panic("prepare snapshot called after Close()")
+		fatal("prepare snapshot called after Close()")
 	}
 	return &sm.storage, nil
 }
 
 func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (idx uint64, err error) {
-	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.ReplicaID, sm.ShardID)
+	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.replicaID, sm.shardID)
 
 	if err = os.MkdirAll(dir, 0755); err != nil {
-		panic(err)
+		fatal(err)
 	}
 
 	syncDir(filepath.Dir(dir))
@@ -349,7 +351,7 @@ func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (idx uint64, err error) {
 		dirName = currentDirName(currentDirFileName)
 
 		if err = os.RemoveAll(updateDirFileName); err != nil {
-			panic(err)
+			fatal(err)
 		}
 		cleanDir(dir, dirName)
 	} else {
@@ -369,11 +371,11 @@ func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (idx uint64, err error) {
 		Cache:               cache,
 	}
 	if err = os.MkdirAll(dirName, 0755); err != nil {
-		panic(err)
+		fatal(err)
 	}
 	sm.storage.db, err = pebble.Open(dirName, opts)
 	if err != nil {
-		panic(err)
+		fatal(err)
 	}
 	cache.Unref()
 
@@ -386,9 +388,7 @@ func (sm *onDiskStateMachine) Lookup(key interface{}) (value interface{}, err er
 	if sm.closed {
 		return nil, fmt.Errorf("raft was closed")
 	}
-	if sm.event != nil {
-		sm.event.LogRead(key)
-	}
+	sm.event.LogRead(key)
 	k, _ := key.(string)
 	return sm.storage.Get([]byte(k))
 }
@@ -401,7 +401,7 @@ func (sm *onDiskStateMachine) Close() (err error) {
 func (sm *onDiskStateMachine) queryAppliedIndex() uint64 {
 	val, closer, err := sm.storage.db.Get([]byte(innerPrefix + appliedIndexKeyName))
 	if err != nil && err != pebble.ErrNotFound {
-		panic(err)
+		fatal(err)
 	}
 
 	defer func() {

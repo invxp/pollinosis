@@ -8,7 +8,7 @@ import (
 )
 
 type defaultStateMachine struct {
-	*Server
+	*Pollinosis
 }
 
 func (sm *defaultStateMachine) stateMachine(_, _ uint64) statemachine.IStateMachine {
@@ -19,10 +19,7 @@ func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Re
 	if sm.closed {
 		return statemachine.Result{}, fmt.Errorf("raft was closed")
 	}
-	if sm.event != nil {
-		sm.event.LogUpdated(entry.Cmd, entry.Index)
-	}
-
+	sm.event.LogUpdated(entry.Cmd, entry.Index)
 	val := &kv{}
 	if err := json.Unmarshal(entry.Cmd, val); err != nil {
 		return statemachine.Result{}, err
@@ -33,9 +30,7 @@ func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Re
 }
 
 func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
-	if sm.event != nil {
-		sm.event.LogRead(i)
-	}
+	sm.event.LogRead(i)
 	val, ok := sm.kv.Load(i.(string))
 	if !ok {
 		return nil, fmt.Errorf("key: %v not exists", i)

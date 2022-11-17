@@ -4,14 +4,19 @@ import (
 	"context"
 	"fmt"
 	"github.com/lni/dragonboat/v4"
+	"go.uber.org/goleak"
 	"os"
 	"sync"
 	"testing"
 	"time"
 )
 
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
+
 func TestServer_StartAndReady(t *testing.T) {
-	var servers []*Server
+	var servers []*Pollinosis
 
 	total := uint64(3)
 	members := make(map[uint64]string)
@@ -52,7 +57,119 @@ func TestServer_StartAndReady(t *testing.T) {
 	wg.Add(len(servers))
 
 	for _, server := range servers {
-		go func(server *Server) {
+		go func(server *Pollinosis) {
+			defer wg.Done()
+			leaderID, _, err = server.Ready(time.Second * 5)
+			if err != nil {
+				t.Error(err)
+			}
+			mu.Lock()
+			checkLeaders = append(checkLeaders, leaderID)
+			mu.Unlock()
+			t.Log("leaderID voted:", checkLeaders)
+		}(server)
+	}
+
+	wg.Wait()
+
+	for i := 0; i < len(checkLeaders)-1; i++ {
+		if checkLeaders[i] != checkLeaders[i+1] {
+			t.Fatal("leaderID id diff:", checkLeaders[i], checkLeaders[i+1])
+		}
+	}
+
+	for _, srv := range servers {
+		srv.Stop()
+	}
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+	}
+}
+
+type CustomListener struct {}
+
+func (c *CustomListener) NodeShuttingDown() {
+	fmt.Println("NodeShuttingDown")
+}
+
+func (c *CustomListener) NodeUnloaded(replicaID, shardID uint64) {
+	fmt.Println("NodeUnloaded", replicaID, shardID)
+}
+func (c *CustomListener) NodeDeleted(replicaID, shardID uint64) {
+	fmt.Println("NodeDeleted", replicaID, shardID)
+}
+func (c *CustomListener) NodeReady(replicaID, shardID uint64) {
+	fmt.Println("NodeReady", replicaID, shardID)
+}
+func (c *CustomListener) MembershipChanged(replicaID, shardID uint64) {
+	fmt.Println("MembershipChanged", replicaID, shardID)
+}
+
+func (c *CustomListener) ConnectionEstablished(address string, snapshot bool) {
+	fmt.Println("ConnectionEstablished", address, snapshot)
+}
+
+func (c *CustomListener) ConnectionFailed(address string, snapshot bool) {
+	fmt.Println("ConnectionFailed", address, snapshot)
+}
+
+func (c *CustomListener) LogUpdated(log []byte, index uint64) {
+	fmt.Println("LogUpdated", string(log), index)
+}
+
+func (c *CustomListener) LogRead(i interface{}) {
+	fmt.Println("LogRead", i)
+}
+
+func (c *CustomListener) LeaderUpdated(leaderID, shardID, replicaID, term uint64) {
+	fmt.Println("LeaderUpdated", leaderID, shardID, replicaID, term)
+}
+
+func TestServer_StartAndReadyToListener(t *testing.T) {
+	var servers []*Pollinosis
+
+	total := uint64(3)
+	members := make(map[uint64]string)
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		members[id] = fmt.Sprintf("0.0.0.0:%d", address)
+		_ = os.RemoveAll(fmt.Sprintf("raft_%d", id))
+	}
+
+	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
+		servers = append(servers, New(
+			id,
+			100,
+			10,
+			1,
+			200,
+			0,
+			100,
+			members[id],
+			fmt.Sprintf("raft_%d", id),
+			false,
+			members,
+		))
+	}
+
+	cs := CustomListener{}
+	for _, srv := range servers {
+		if err := srv.Start(&cs); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var leaderID uint64
+	var err error
+	var checkLeaders []uint64
+	var mu sync.Mutex
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(servers))
+
+	for _, server := range servers {
+		go func(server *Pollinosis) {
 			defer wg.Done()
 			leaderID, _, err = server.Ready(time.Second * 5)
 			if err != nil {
@@ -83,7 +200,7 @@ func TestServer_StartAndReady(t *testing.T) {
 }
 
 func TestServer_StartOnDiskAndReadyGetSet(t *testing.T) {
-	var servers []*Server
+	var servers []*Pollinosis
 
 	total := uint64(3)
 	members := make(map[uint64]string)
@@ -125,7 +242,7 @@ func TestServer_StartOnDiskAndReadyGetSet(t *testing.T) {
 	wg.Add(len(servers))
 
 	for _, server := range servers {
-		go func(server *Server) {
+		go func(server *Pollinosis) {
 			defer wg.Done()
 			leaderID, _, err = server.Ready(time.Second * 5)
 			if err != nil {
@@ -166,7 +283,7 @@ func TestServer_StartOnDiskAndReadyGetSet(t *testing.T) {
 }
 
 func TestServer_GetSet(t *testing.T) {
-	var servers []*Server
+	var servers []*Pollinosis
 
 	total := uint64(3)
 	members := make(map[uint64]string)
@@ -207,7 +324,7 @@ func TestServer_GetSet(t *testing.T) {
 	wg.Add(len(servers))
 
 	for _, server := range servers {
-		go func(server *Server) {
+		go func(server *Pollinosis) {
 			defer wg.Done()
 			leaderID, _, err = server.Ready(time.Second * 5)
 			if err != nil {
@@ -260,7 +377,7 @@ func TestServer_GetSet(t *testing.T) {
 }
 
 func TestServer_TransferLeader(t *testing.T) {
-	var servers []*Server
+	var servers []*Pollinosis
 
 	total := uint64(3)
 	members := make(map[uint64]string)
@@ -301,7 +418,7 @@ func TestServer_TransferLeader(t *testing.T) {
 	wg.Add(len(servers))
 
 	for _, server := range servers {
-		go func(server *Server) {
+		go func(server *Pollinosis) {
 			defer wg.Done()
 			leaderID, _, err = server.Ready(time.Second * 5)
 			if err != nil {
@@ -328,7 +445,7 @@ func TestServer_TransferLeader(t *testing.T) {
 		follower = 0
 	}
 
-	err = servers[follower].TransferLeader(time.Second*5, servers[follower].ReplicaID)
+	err = servers[leader].TransferLeader(time.Second*5, servers[follower].replicaID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,8 +453,8 @@ func TestServer_TransferLeader(t *testing.T) {
 	if newLeader, _, err := servers[follower].Ready(time.Second * 5); err != nil {
 		t.Fatal(err)
 	} else {
-		if newLeader != servers[follower].ReplicaID {
-			t.Fatal("leaderID transfer failed", "current", newLeader, "want", servers[follower].ReplicaID)
+		if newLeader != servers[follower].replicaID {
+			t.Fatal("leaderID transfer failed", "current", newLeader, "want", servers[follower].replicaID)
 		}
 	}
 
@@ -351,7 +468,7 @@ func TestServer_TransferLeader(t *testing.T) {
 }
 
 func TestServer_AddRemoveNodeAndGetValue(t *testing.T) {
-	var servers []*Server
+	var servers []*Pollinosis
 
 	total := uint64(3)
 	members := make(map[uint64]string)
@@ -392,7 +509,7 @@ func TestServer_AddRemoveNodeAndGetValue(t *testing.T) {
 	wg.Add(len(servers))
 
 	for _, server := range servers {
-		go func(server *Server) {
+		go func(server *Pollinosis) {
 			defer wg.Done()
 			leaderID, _, err = server.Ready(time.Second * 5)
 			if err != nil {
@@ -452,7 +569,7 @@ func TestServer_AddRemoveNodeAndGetValue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = servers[leader].AddReplica(time.Second*10, newServer.ReplicaID, newServer.hostConfig.RaftAddress, 0)
+	err = servers[leader].AddReplica(time.Second*10, newServer.replicaID, newServer.hostConfig.RaftAddress, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +591,7 @@ func TestServer_AddRemoveNodeAndGetValue(t *testing.T) {
 		t.Fatal(err, value, wantValue)
 	}
 
-	err = newServer.DeleteReplica(time.Second*10, newServer.ReplicaID, 0)
+	err = newServer.DeleteReplica(time.Second*10, newServer.replicaID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +614,7 @@ func TestServer_AddRemoveNodeAndGetValue(t *testing.T) {
 }
 
 func TestServer_Snapshot(t *testing.T) {
-	var servers []*Server
+	var servers []*Pollinosis
 
 	total := uint64(3)
 	members := make(map[uint64]string)
@@ -538,7 +655,7 @@ func TestServer_Snapshot(t *testing.T) {
 	wg.Add(len(servers))
 
 	for _, server := range servers {
-		go func(server *Server) {
+		go func(server *Pollinosis) {
 			defer wg.Done()
 			leaderID, _, err = server.Ready(time.Second * 5)
 			if err != nil {
@@ -566,10 +683,10 @@ func TestServer_Snapshot(t *testing.T) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 10)
 	defer cancel()
 
-	_, err = servers[leader].raft.SyncRequestSnapshot(ctx, servers[leader].ShardID, dragonboat.SnapshotOption{})
+	_, err = servers[leader].raft.SyncRequestSnapshot(ctx, servers[leader].shardID, dragonboat.SnapshotOption{})
 
 	if err != nil {
 		t.Fatal(err)

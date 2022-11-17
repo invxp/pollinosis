@@ -1,7 +1,7 @@
 package pollinosis
 
 import (
-	"errors"
+	"fmt"
 	"github.com/cockroachdb/pebble"
 	"sync"
 )
@@ -13,7 +13,7 @@ type storage struct {
 
 func (s *storage) Get(key []byte) ([]byte, error) {
 	if s.db == nil {
-		return nil, errors.New("db was not opened")
+		return nil, fmt.Errorf("db was not opened")
 	}
 
 	s.mu.RLock()
@@ -33,7 +33,7 @@ func (s *storage) Get(key []byte) ([]byte, error) {
 
 func (s *storage) Close() error {
 	if s.db == nil {
-		return errors.New("db was not opened")
+		return fmt.Errorf("db was not opened")
 	}
 
 	s.mu.RLock()
@@ -44,7 +44,7 @@ func (s *storage) Close() error {
 
 func (s *storage) Batch(f func(batch *pebble.Batch)) error {
 	if s.db == nil {
-		return errors.New("db was not opened")
+		return fmt.Errorf("db was not opened")
 	}
 
 	b := s.db.NewBatch()

@@ -4,72 +4,44 @@ import (
 	"github.com/lni/dragonboat/v4/raftio"
 )
 
-func (s *Server) NodeHostShuttingDown() {
-	//TODO
+func (p *nodeHostEvent) LeaderUpdated(info raftio.LeaderInfo) {
+	p.event.LeaderUpdated(info.LeaderID, info.ShardID, info.ReplicaID, info.Term)
 }
 
-func (s *Server) NodeUnloaded(info raftio.NodeInfo) {
-	//TODO
+func (p *nodeHostEvent) NodeHostShuttingDown() {
+	p.event.NodeShuttingDown()
 }
 
-func (s *Server) NodeDeleted(info raftio.NodeInfo) {
-	//TODO
+func (p *nodeHostEvent) NodeUnloaded(info raftio.NodeInfo) {
+	p.event.NodeUnloaded(info.ReplicaID, info.ShardID)
 }
 
-func (s *Server) NodeReady(info raftio.NodeInfo) {
-	//TODO
+func (p *nodeHostEvent) NodeDeleted(info raftio.NodeInfo) {
+	p.event.NodeDeleted(info.ReplicaID, info.ShardID)
 }
 
-func (s *Server) MembershipChanged(info raftio.NodeInfo) {
-	//TODO
+func (p *nodeHostEvent) NodeReady(info raftio.NodeInfo) {
+	p.event.NodeReady(info.ReplicaID, info.ShardID)
 }
 
-func (s *Server) ConnectionEstablished(info raftio.ConnectionInfo) {
-	//TODO
+func (p *nodeHostEvent) MembershipChanged(info raftio.NodeInfo) {
+	p.event.MembershipChanged(info.ReplicaID, info.ShardID)
 }
 
-func (s *Server) ConnectionFailed(info raftio.ConnectionInfo) {
-	//TODO
+func (p *nodeHostEvent) ConnectionEstablished(info raftio.ConnectionInfo) {
+	p.event.ConnectionEstablished(info.Address, info.SnapshotConnection)
 }
 
-func (s *Server) SendSnapshotStarted(info raftio.SnapshotInfo) {
-	//TODO
+func (p *nodeHostEvent) ConnectionFailed(info raftio.ConnectionInfo) {
+	p.event.ConnectionFailed(info.Address, info.SnapshotConnection)
 }
 
-func (s *Server) SendSnapshotCompleted(info raftio.SnapshotInfo) {
-	//TODO
-}
-
-func (s *Server) SendSnapshotAborted(info raftio.SnapshotInfo) {
-	//TODO
-}
-
-func (s *Server) SnapshotReceived(info raftio.SnapshotInfo) {
-	//TODO
-}
-
-func (s *Server) SnapshotRecovered(info raftio.SnapshotInfo) {
-	//TODO
-}
-
-func (s *Server) SnapshotCreated(info raftio.SnapshotInfo) {
-	//TODO
-}
-
-func (s *Server) SnapshotCompacted(info raftio.SnapshotInfo) {
-	//TODO
-}
-
-func (s *Server) LogCompacted(info raftio.EntryInfo) {
-	//TODO
-}
-
-func (s *Server) LogDBCompacted(info raftio.EntryInfo) {
-	//TODO
-}
-
-func (s *Server) LeaderUpdated(info raftio.LeaderInfo) {
-	if s.event != nil {
-		s.event.LeaderUpdated(info.LeaderID, info.ShardID, info.ReplicaID, info.Term)
-	}
-}
+func (p *nodeHostEvent) SendSnapshotStarted(_ raftio.SnapshotInfo)   {}
+func (p *nodeHostEvent) SendSnapshotCompleted(_ raftio.SnapshotInfo) {}
+func (p *nodeHostEvent) SendSnapshotAborted(_ raftio.SnapshotInfo)   {}
+func (p *nodeHostEvent) SnapshotReceived(_ raftio.SnapshotInfo)      {}
+func (p *nodeHostEvent) SnapshotRecovered(_ raftio.SnapshotInfo)     {}
+func (p *nodeHostEvent) SnapshotCreated(_ raftio.SnapshotInfo)       {}
+func (p *nodeHostEvent) SnapshotCompacted(_ raftio.SnapshotInfo)     {}
+func (p *nodeHostEvent) LogCompacted(_ raftio.EntryInfo)             {}
+func (p *nodeHostEvent) LogDBCompacted(_ raftio.EntryInfo)           {}
