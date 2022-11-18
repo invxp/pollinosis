@@ -6,6 +6,7 @@ import (
 	"github.com/lni/dragonboat/v4/config"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 )
 
 // EventListener Raft事件监听
@@ -46,7 +47,7 @@ type Pollinosis struct {
 	shardID uint64
 
 	// closed 是否已关闭
-	closed  bool
+	closed  atomic.Bool
 	// join 是否半截新增的节点
 	// 如果是新增的节点members必须为空(通过加入的ShardID内获取)
 	join    bool

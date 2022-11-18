@@ -16,7 +16,7 @@ func (sm *defaultStateMachine) stateMachine(_, _ uint64) statemachine.IStateMach
 }
 
 func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Result, error) {
-	if sm.closed {
+	if sm.closed.Load() {
 		return statemachine.Result{}, fmt.Errorf("raft was closed")
 	}
 	sm.event.LogUpdated(entry.Cmd, entry.Index)
@@ -30,6 +30,9 @@ func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Re
 }
 
 func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
+	if sm.closed.Load() {
+		return nil, fmt.Errorf("raft was closed")
+	}
 	sm.event.LogRead(i)
 	val, ok := sm.kv.Load(i.(string))
 	if !ok {
@@ -39,6 +42,9 @@ func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
 }
 
 func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISnapshotFileCollection, _ <-chan struct{}) error {
+	if sm.closed.Load() {
+		return fmt.Errorf("raft was closed")
+	}
 	var lst []kv
 	sm.kv.Range(func(key, value any) bool {
 		lst = append(lst, kv{key.(string), value.(string)})
@@ -56,6 +62,9 @@ func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISn
 }
 
 func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statemachine.SnapshotFile, _ <-chan struct{}) error {
+	if sm.closed.Load() {
+		return fmt.Errorf("raft was closed")
+	}
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return err
@@ -73,9 +82,9 @@ func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statema
 }
 
 func (sm *defaultStateMachine) Close() error {
-	if sm.closed {
+	if sm.closed.Load() {
 		return fmt.Errorf("raft already closed")
 	}
-	sm.closed = true
+	sm.closed.Store(true)
 	return nil
 }

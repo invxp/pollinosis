@@ -1,10 +1,44 @@
 package pollinosis
 
 import (
+	"fmt"
 	"log"
+	"os"
 	"testing"
 	"time"
 )
+
+type CustomListener struct {}
+func (c *CustomListener) NodeShuttingDown() {
+	fmt.Println("NodeShuttingDown")
+}
+func (c *CustomListener) NodeUnloaded(replicaID, shardID uint64) {
+	fmt.Println("NodeUnloaded", replicaID, shardID)
+}
+func (c *CustomListener) NodeDeleted(replicaID, shardID uint64) {
+	fmt.Println("NodeDeleted", replicaID, shardID)
+}
+func (c *CustomListener) NodeReady(replicaID, shardID uint64) {
+	fmt.Println("NodeReady", replicaID, shardID)
+}
+func (c *CustomListener) MembershipChanged(replicaID, shardID uint64) {
+	fmt.Println("MembershipChanged", replicaID, shardID)
+}
+func (c *CustomListener) ConnectionEstablished(address string, snapshot bool) {
+	fmt.Println("ConnectionEstablished", address, snapshot)
+}
+func (c *CustomListener) ConnectionFailed(address string, snapshot bool) {
+	fmt.Println("ConnectionFailed", address, snapshot)
+}
+func (c *CustomListener) LogUpdated(log []byte, index uint64) {
+	fmt.Println("LogUpdated", string(log), index)
+}
+func (c *CustomListener) LogRead(i interface{}) {
+	fmt.Println("LogRead", i)
+}
+func (c *CustomListener) LeaderUpdated(leaderID, shardID, replicaID, term uint64) {
+	fmt.Println("LeaderUpdated", leaderID, shardID, replicaID, term)
+}
 
 // TestGetSet 最小测试集(例子)
 func TestGetSet(t *testing.T) {
@@ -43,8 +77,6 @@ func TestGetSet(t *testing.T) {
 		log.Println("pollinosis ready leaderID", leaderID, "isLeader", isLeader)
 	}
 
-	defer p.Stop()
-
 	if err := p.Set(time.Second * 5, "K", "V"); err != nil {
 		log.Fatal(err)
 	}
@@ -54,4 +86,8 @@ func TestGetSet(t *testing.T) {
 	}else{
 		log.Println("pollinosis get", "K", value)
 	}
+
+	p.Stop()
+
+	_ = os.RemoveAll("1")
 }

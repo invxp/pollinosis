@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/lni/dragonboat/v4"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,7 +22,13 @@ func (p *Pollinosis) Start(listener ...EventListener) error {
 
 // StartOnDisk 启动Raft实例(PebbleDB)
 func (p *Pollinosis) StartOnDisk(listener ...EventListener) error {
-	p.stateMachine = &onDiskStateMachine{p, 0, storage{}, false}
+	p.stateMachine = &onDiskStateMachine{p, atomic.Uint64{}, atomic.Bool{}, storage{}}
+	return p.start(listener...)
+}
+
+// StartConcurrent 启动Raft实例(Concurrent)
+func (p *Pollinosis) StartConcurrent(listener ...EventListener) error {
+	p.stateMachine = &concurrentStateMachine{p}
 	return p.start(listener...)
 }
 
@@ -226,6 +233,8 @@ func (p *Pollinosis) start(listener... EventListener) error {
 		return p.raft.StartReplica(p.members, p.join, sm.stateMachine, p.raftConfig)
 	case *onDiskStateMachine:
 		return p.raft.StartOnDiskReplica(p.members, p.join, sm.stateMachine, p.raftConfig)
+	case *concurrentStateMachine:
+		return p.raft.StartConcurrentReplica(p.members, p.join, sm.stateMachine, p.raftConfig)
 	default:
 		return fmt.Errorf("unknown driver type: %v", sm)
 	}
