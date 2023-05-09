@@ -2,7 +2,7 @@ package pollinosis
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"github.com/lni/dragonboat/v4/statemachine"
 	"io"
 )
@@ -17,37 +17,46 @@ func (sm *defaultStateMachine) stateMachine(_, _ uint64) statemachine.IStateMach
 
 func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Result, error) {
 	if sm.closed.Load() {
-		return statemachine.Result{}, fmt.Errorf("raft was closed")
+		return statemachine.Result{}, errors.New(ErrRaftClosed)
 	}
-	sm.event.LogUpdated(entry.Cmd, entry.Index)
-	val := &kv{}
+	val := &keyValue{}
 	if err := json.Unmarshal(entry.Cmd, val); err != nil {
 		return statemachine.Result{}, err
 	}
 	sm.kv.Store(val.Key, val.Value)
+
+	defer sm.event.LogUpdated(val.Key, val.Value, entry.Index)
 
 	return statemachine.Result{Value: uint64(len(entry.Cmd))}, nil
 }
 
 func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, fmt.Errorf("raft was closed")
+		return nil, errors.New(ErrRaftClosed)
 	}
-	sm.event.LogRead(i)
-	val, ok := sm.kv.Load(i.(string))
+
+	key, ok := i.(string)
 	if !ok {
-		return nil, fmt.Errorf("key: %v not exists", i)
+		return nil, errors.New(ErrKeyInvalid)
+	}
+
+	val, exists := sm.kv.Load(key)
+
+	defer sm.event.LogRead(key)
+
+	if !exists {
+		return nil, errors.New(ErrKeyNotExist)
 	}
 	return val, nil
 }
 
 func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISnapshotFileCollection, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft was closed")
+		return errors.New(ErrRaftClosed)
 	}
-	var lst []kv
+	var lst []keyValue
 	sm.kv.Range(func(key, value any) bool {
-		lst = append(lst, kv{key.(string), value.(string)})
+		lst = append(lst, keyValue{key.(string), value.(string)})
 		return true
 	})
 
@@ -63,14 +72,14 @@ func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISn
 
 func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statemachine.SnapshotFile, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft was closed")
+		return errors.New(ErrRaftClosed)
 	}
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return err
 	}
 
-	var lst []kv
+	var lst []keyValue
 	err = json.Unmarshal(data, &lst)
 	if err != nil {
 		return err
@@ -83,7 +92,7 @@ func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statema
 
 func (sm *defaultStateMachine) Close() error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft already closed")
+		return errors.New(ErrRaftClosed)
 	}
 	sm.closed.Store(true)
 	return nil

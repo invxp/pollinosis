@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-type CustomListener struct {}
+type CustomListener struct{}
+
 func (c *CustomListener) NodeShuttingDown() {
 	fmt.Println("NodeShuttingDown")
 }
@@ -30,11 +31,11 @@ func (c *CustomListener) ConnectionEstablished(address string, snapshot bool) {
 func (c *CustomListener) ConnectionFailed(address string, snapshot bool) {
 	fmt.Println("ConnectionFailed", address, snapshot)
 }
-func (c *CustomListener) LogUpdated(log []byte, index uint64) {
-	fmt.Println("LogUpdated", string(log), index)
+func (c *CustomListener) LogUpdated(key, value string, index uint64) {
+	fmt.Println("LogUpdated", key, value, index)
 }
-func (c *CustomListener) LogRead(i interface{}) {
-	fmt.Println("LogRead", i)
+func (c *CustomListener) LogRead(key string) {
+	fmt.Println("LogRead", key)
 }
 func (c *CustomListener) LeaderUpdated(leaderID, shardID, replicaID, term uint64) {
 	fmt.Println("LeaderUpdated", leaderID, shardID, replicaID, term)
@@ -53,19 +54,9 @@ func TestGetSet(t *testing.T) {
 	// bindAddress - 本地监听的IP和端口
 	// dataDir - 数据持久化的目录
 	// join - 是否为新增的节点
-	p := New(1,
-		100,
-		10,
-		2,
-		200,
-		0,
-		1000,
-		"127.0.0.1:10001",
-		".",
-		false,
-		map[uint64]string{1:"127.0.0.1:10001"})
+	p := New(1, 100, 10, 2, 200, 0, 1000, "127.0.0.1:10001", ".", false, map[uint64]string{1: "127.0.0.1:10001"})
 
-	if err := p.Start(); err != nil {
+	if err := p.Start(&CustomListener{}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -73,17 +64,17 @@ func TestGetSet(t *testing.T) {
 
 	if leaderID, isLeader, err := p.Ready(time.Second * 5); err != nil {
 		log.Fatal(err)
-	}else{
+	} else {
 		log.Println("pollinosis ready leaderID", leaderID, "isLeader", isLeader)
 	}
 
-	if err := p.Set(time.Second * 5, "K", "V"); err != nil {
+	if err := p.Set(time.Second*5, "K", "V"); err != nil {
 		log.Fatal(err)
 	}
 
-	if value, err := p.Get(time.Second * 5, "K"); err != nil || value != "V" {
+	if value, err := p.Get(time.Second*5, "K"); err != nil || value != "V" {
 		log.Fatal(err)
-	}else{
+	} else {
 		log.Println("pollinosis get", "K", value)
 	}
 

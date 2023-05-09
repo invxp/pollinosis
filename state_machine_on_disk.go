@@ -5,19 +5,22 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/cockroachdb/pebble"
 	"github.com/google/uuid"
 	"github.com/lni/dragonboat/v4/statemachine"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 )
 
 const (
-	innerPrefix         = "inner_"
+	innerPrefix = "inner_"
 
 	appliedIndexKeyName = "applied_index"
 
@@ -32,6 +35,20 @@ type onDiskStateMachine struct {
 	lastApplied atomic.Uint64
 	closed      atomic.Bool
 	storage     storage
+}
+
+func executablePath() string {
+	file, err := exec.LookPath(os.Args[0])
+	if err != nil {
+		return ""
+	}
+
+	path, err := filepath.Abs(file)
+	if err != nil {
+		return ""
+	}
+
+	return path[0:strings.LastIndex(path, string(os.PathSeparator))] + string(os.PathSeparator)
 }
 
 func uint64ToByte(value uint64) []byte {
@@ -56,7 +73,7 @@ func currentDirName(dir string) (string, error) {
 	}
 
 	if len(data) <= 8 {
-		return "", fmt.Errorf("corrupted content")
+		return "", errors.New(ErrDataError)
 	}
 
 	crc := data[:8]
@@ -67,7 +84,7 @@ func currentDirName(dir string) (string, error) {
 	}
 
 	if !bytes.Equal(crc, h.Sum(nil)[:8]) {
-		return "", fmt.Errorf("corrupted content with not matched crc")
+		return "", errors.New(ErrDataError)
 	}
 
 	return string(content), nil
@@ -108,7 +125,7 @@ func syncDir(dir string) error {
 		return err
 	}
 	if !fileInfo.IsDir() {
-		return fmt.Errorf("not a dir")
+		return errors.New(ErrNotDir)
 	}
 	df, err := os.Open(filepath.Clean(dir))
 	if err != nil {
@@ -156,35 +173,34 @@ func (sm *onDiskStateMachine) stateMachine(_, _ uint64) statemachine.IOnDiskStat
 
 func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine.Entry, error) {
 	if sm.closed.Load() {
-		return entry, fmt.Errorf("raft was closed")
+		return entry, errors.New(ErrRaftClosed)
 	}
 
 	lastAppliedIndex := entry[len(entry)-1].Index
 
 	if sm.lastApplied.Load() >= lastAppliedIndex {
-		return entry, fmt.Errorf("lastApplied not moving forward")
+		return entry, errors.New(ErrLastIndex)
 	}
 
 	sm.lastApplied.Store(lastAppliedIndex)
 
 	err := sm.storage.Batch(func(batch *pebble.Batch) {
 		for i, e := range entry {
-			sm.event.LogUpdated(entry[i].Cmd, entry[i].Index)
-			val := &kv{}
+			val := &keyValue{}
 			if err := json.Unmarshal(e.Cmd, val); err != nil {
-				fmt.Println("unmarshal data error", string(e.Cmd))
-				return
+				panic("unmarshal data error " + string(e.Cmd))
 			}
+
+			sm.event.LogUpdated(val.Key, val.Value, entry[i].Index)
+
 			if err := batch.Set([]byte(val.Key), []byte(val.Value), &pebble.WriteOptions{Sync: false}); err != nil {
-				fmt.Println("store data error", val.Key, val.Value, err)
-				return
+				panic("store data error " + val.Key + " " + val.Value + " " + err.Error())
 			}
 			entry[i].Result = statemachine.Result{Value: uint64(len(entry[i].Cmd))}
 		}
 
 		if err := batch.Set([]byte(innerPrefix+appliedIndexKeyName), uint64ToByte(lastAppliedIndex), &pebble.WriteOptions{Sync: false}); err != nil {
-			fmt.Println("store index error", err)
-			return
+			panic("store index error " + err.Error())
 		}
 	})
 
@@ -193,14 +209,14 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 
 func (sm *onDiskStateMachine) Sync() error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft was closed")
+		return errors.New(ErrRaftClosed)
 	}
 	return nil
 }
 
 func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft was closed")
+		return errors.New(ErrRaftClosed)
 	}
 
 	sm.storage.mu.RLock()
@@ -215,9 +231,9 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 	defer func() {
 		_ = iter.Close()
 	}()
-	values := make([]*kv, 0)
+	values := make([]*keyValue, 0)
 	for iter.First(); iter.Valid(); iter.Next() {
-		val := &kv{
+		val := &keyValue{
 			Key:   string(iter.Key()),
 			Value: string(iter.Value()),
 		}
@@ -231,16 +247,13 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 	for _, kv := range values {
 		data, err := json.Marshal(kv)
 		if err != nil {
-			fmt.Println("marshal data error", err, kv)
-			continue
+			panic("marshal data error " + err.Error())
 		}
 		if _, err = w.Write(uint64ToByte(uint64(len(data)))); err != nil {
-			fmt.Println("write data length error", err, len(data))
-			continue
+			panic("write data length error " + err.Error())
 		}
 		if _, err = w.Write(data); err != nil {
-			fmt.Println("write data error", err, data)
-			continue
+			panic("write data error" + err.Error())
 		}
 	}
 
@@ -249,14 +262,14 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 
 func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft was closed")
+		return errors.New(ErrRaftClosed)
 	}
 	newLastApplied, err := sm.queryAppliedIndex()
 	if err != nil {
 		return err
 	}
 	if sm.lastApplied.Load() > newLastApplied {
-		return fmt.Errorf("last applied not moving forward")
+		return errors.New(ErrLastIndex)
 	}
 	sm.lastApplied.Store(newLastApplied)
 
@@ -265,7 +278,8 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 		return err
 	}
 
-	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.replicaID, sm.shardID)
+	dir := filepath.Join(executablePath(), databaseName)
+	dir += fmt.Sprintf(".%d.%d", sm.replicaID, sm.shardID)
 	databaseDir := filepath.Join(dir, uuid.NewString())
 	oldDirName, err := currentDirName(filepath.Join(dir, current))
 
@@ -297,24 +311,20 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 	err = sm.storage.Batch(func(batch *pebble.Batch) {
 		for i := uint64(0); i < totalSize; i++ {
 			if _, err = io.ReadFull(r, sz); err != nil {
-				fmt.Println("read data length error", err)
-				continue
+				panic("read data length error " + err.Error())
 			}
 			toRead := binary.LittleEndian.Uint64(sz)
 
 			data := make([]byte, toRead)
 			if _, err = io.ReadFull(r, data); err != nil {
-				fmt.Println("read data error", err)
-				continue
+				panic("read data error " + err.Error())
 			}
-			val := &kv{}
+			val := &keyValue{}
 			if err = json.Unmarshal(data, val); err != nil {
-				fmt.Println("unmarshal data length error", err, string(data))
-				continue
+				panic("unmarshal data length error " + err.Error())
 			}
 			if err = batch.Set([]byte(val.Key), []byte(val.Value), &pebble.WriteOptions{Sync: false}); err != nil {
-				fmt.Println("store data error", err, val.Key, val.Value)
-				continue
+				panic("store data error " + err.Error())
 			}
 		}
 	})
@@ -337,7 +347,7 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 
 func (sm *onDiskStateMachine) PrepareSnapshot() (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, fmt.Errorf("raft was closed")
+		return nil, errors.New(ErrRaftClosed)
 	}
 	return &sm.storage, nil
 }
@@ -347,7 +357,8 @@ func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (uint64, error) {
 	var err error
 	var idx uint64
 
-	dir := fmt.Sprintf("%s.%d.%d", databaseName, sm.replicaID, sm.shardID)
+	dir := filepath.Join(executablePath(), databaseName)
+	dir += fmt.Sprintf(".%d.%d", sm.replicaID, sm.shardID)
 
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		return 0, err
@@ -418,16 +429,19 @@ func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (uint64, error) {
 
 func (sm *onDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, fmt.Errorf("raft was closed")
+		return nil, errors.New(ErrRaftClosed)
 	}
-	sm.event.LogRead(key)
-	k, _ := key.(string)
+	k, ok := key.(string)
+	if !ok {
+		return nil, errors.New(ErrKeyInvalid)
+	}
+	sm.event.LogRead(k)
 	return sm.storage.Get([]byte(k))
 }
 
 func (sm *onDiskStateMachine) Close() error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft already closed")
+		return errors.New(ErrRaftClosed)
 	}
 	sm.closed.Store(true)
 	return nil

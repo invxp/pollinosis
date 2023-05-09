@@ -2,11 +2,10 @@ package pollinosis
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"github.com/lni/dragonboat/v4/statemachine"
 	"io"
 )
-
 
 type concurrentStateMachine struct {
 	*Pollinosis
@@ -18,15 +17,17 @@ func (sm *concurrentStateMachine) stateMachine(_, _ uint64) statemachine.IConcur
 
 func (sm *concurrentStateMachine) Update(entries []statemachine.Entry) ([]statemachine.Entry, error) {
 	if sm.closed.Load() {
-		return entries, fmt.Errorf("raft was closed")
+		return entries, errors.New(ErrRaftClosed)
 	}
 
 	for _, entry := range entries {
-		sm.event.LogUpdated(entry.Cmd, entry.Index)
-		val := &kv{}
+		val := &keyValue{}
 		if err := json.Unmarshal(entry.Cmd, val); err != nil {
 			return entries, err
 		}
+
+		sm.event.LogUpdated(val.Key, val.Value, entry.Index)
+
 		sm.kv.Store(val.Key, val.Value)
 	}
 
@@ -35,31 +36,37 @@ func (sm *concurrentStateMachine) Update(entries []statemachine.Entry) ([]statem
 
 func (sm *concurrentStateMachine) Lookup(i interface{}) (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, fmt.Errorf("raft was closed")
+		return nil, errors.New(ErrRaftClosed)
 	}
 
-	sm.event.LogRead(i)
-	val, ok := sm.kv.Load(i.(string))
+	key, ok := i.(string)
+
 	if !ok {
-		return nil, fmt.Errorf("key: %v not exists", i)
+		return nil, errors.New(ErrKeyInvalid)
+	}
+
+	sm.event.LogRead(key)
+	val, exists := sm.kv.Load(key)
+	if !exists {
+		return nil, errors.New(ErrKeyNotExist)
 	}
 	return val, nil
 }
 
 func (sm *concurrentStateMachine) PrepareSnapshot() (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, fmt.Errorf("raft was closed")
+		return nil, errors.New(ErrRaftClosed)
 	}
 	return sm, nil
 }
 
-func (sm *concurrentStateMachine) SaveSnapshot(i interface{}, writer io.Writer, _ statemachine.ISnapshotFileCollection, _ <-chan struct{}) error {
+func (sm *concurrentStateMachine) SaveSnapshot(_ interface{}, writer io.Writer, _ statemachine.ISnapshotFileCollection, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft was closed")
+		return errors.New(ErrRaftClosed)
 	}
-	var lst []kv
+	var lst []keyValue
 	sm.kv.Range(func(key, value any) bool {
-		lst = append(lst, kv{key.(string), value.(string)})
+		lst = append(lst, keyValue{key.(string), value.(string)})
 		return true
 	})
 
@@ -75,14 +82,14 @@ func (sm *concurrentStateMachine) SaveSnapshot(i interface{}, writer io.Writer, 
 
 func (sm *concurrentStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statemachine.SnapshotFile, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft was closed")
+		return errors.New(ErrRaftClosed)
 	}
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return err
 	}
 
-	var lst []kv
+	var lst []keyValue
 	err = json.Unmarshal(data, &lst)
 	if err != nil {
 		return err
@@ -95,9 +102,8 @@ func (sm *concurrentStateMachine) RecoverFromSnapshot(reader io.Reader, _ []stat
 
 func (sm *concurrentStateMachine) Close() error {
 	if sm.closed.Load() {
-		return fmt.Errorf("raft already closed")
+		return errors.New(ErrRaftClosed)
 	}
 	sm.closed.Store(true)
 	return nil
 }
-
