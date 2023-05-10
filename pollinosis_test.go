@@ -10,6 +10,44 @@ import (
 
 type CustomListener struct{}
 
+func initRaftGroup(dataDir string, replicas map[uint64]string, replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond uint64) *Pollinosis {
+	return New(
+		replicaID,
+		shardID,
+		electionRTT,
+		heartbeatRTT,
+		rttMillisecond,
+		0,
+		0,
+		replicas[replicaID],
+		dataDir,
+		false,
+		replicas,
+	)
+}
+
+func initRaftSingle(dataDir, bindAddress string, replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond uint64, join bool) *Pollinosis {
+	var members = make(map[uint64]string)
+
+	if !join {
+		members[replicaID] = bindAddress
+	}
+
+	return New(
+		replicaID,
+		shardID,
+		electionRTT,
+		heartbeatRTT,
+		rttMillisecond,
+		0,
+		0,
+		bindAddress,
+		dataDir,
+		join,
+		members,
+	)
+}
+
 func (c *CustomListener) NodeShuttingDown() {
 	fmt.Println("NodeShuttingDown")
 }
