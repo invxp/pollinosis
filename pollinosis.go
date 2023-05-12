@@ -103,6 +103,18 @@ type Pollinosis struct {
 
 // New 创建一个Raft实例
 func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshotEntries, compactionOverhead uint64, bindAddress, dataDir string, join bool, members map[uint64]string) *Pollinosis {
+	if replicaID == 0 || shardID == 0 {
+		panic("replicaID or shardID must > 0")
+	}
+
+	if electionRTT == 0 || heartbeatRTT == 0 || rttMillisecond == 0 {
+		panic("electionRTT or heartbeatRTT or rttMillisecond must > 0")
+	}
+
+	if len(bindAddress) == 0 || len(dataDir) == 0 {
+		panic("bind address or data dir was nil")
+	}
+
 	srv := &Pollinosis{replicaID: replicaID, shardID: shardID, join: join, members: members, event: defaultEvent}
 
 	srv.raftConfig = config.Config{
