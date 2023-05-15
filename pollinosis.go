@@ -17,16 +17,18 @@ import (
 	"time"
 )
 
-const (
-	ErrKeyNotExist   = "key is not exists"
-	ErrRaftClosed    = "raft was closed"
-	ErrRaftNil       = "raft was nil"
-	ErrKeyInvalid    = "key was invalid"
-	ErrAlreadyExists = "raft was already exists"
-	ErrDBNotOpen     = "db not open"
-	ErrDataError     = "data error"
-	ErrNotDir        = "not dir"
-	ErrLastIndex     = "last index error"
+var (
+	ErrKeyNotExist   = errors.New("key is not exists")
+	ErrRaftClosed    = errors.New("raft was closed")
+	ErrRaftNil       = errors.New("raft was nil")
+	ErrKeyInvalid    = errors.New("key was invalid")
+	ErrAlreadyExists = errors.New("raft was already exists")
+	ErrDBNotOpen     = errors.New("db not open")
+	ErrDataError     = errors.New("data error")
+	ErrNotDir        = errors.New("not dir")
+	ErrLastIndex     = errors.New("last index error")
+	ErrNotReady      = dragonboat.ErrShardNotReady
+	ErrTimeout       = dragonboat.ErrTimeout
 )
 
 // keyValue Raft内部KV数据,用于存储基础数据
@@ -200,11 +202,11 @@ func (p *Pollinosis) Stop() {
 // 并不是Leader才可以发起,集群内部任意角色都可以
 func (p *Pollinosis) Set(timeout time.Duration, key, value string) error {
 	if p.raft == nil {
-		return errors.New(ErrRaftNil)
+		return ErrRaftNil
 	}
 
 	if len(key) <= 0 {
-		return errors.New(ErrKeyInvalid)
+		return ErrKeyInvalid
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -236,11 +238,11 @@ func (p *Pollinosis) Set(timeout time.Duration, key, value string) error {
 // 好处是保证一致性的前提下减缓Leader的读数据的IO压力
 func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err error) {
 	if p.raft == nil {
-		return "", errors.New(ErrRaftNil)
+		return "", ErrRaftNil
 	}
 
 	if len(key) <= 0 {
-		return "", errors.New(ErrKeyInvalid)
+		return "", ErrKeyInvalid
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -273,7 +275,7 @@ func (p *Pollinosis) NodeInfo() *dragonboat.NodeHostInfo {
 // GetValidNodes 获取有效集群成员列表
 func (p *Pollinosis) GetValidNodes(timeout time.Duration) (map[uint64]string, error) {
 	if p.raft == nil {
-		return nil, errors.New(ErrRaftNil)
+		return nil, ErrRaftNil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -289,7 +291,7 @@ func (p *Pollinosis) GetValidNodes(timeout time.Duration) (map[uint64]string, er
 // 建议通过Leader发起(Follower也可以,只不过内部会多一次请求)
 func (p *Pollinosis) TransferLeader(timeout time.Duration, targetReplicaID uint64) error {
 	if p.raft == nil {
-		return errors.New(ErrRaftNil)
+		return ErrRaftNil
 	}
 
 	err := p.raft.RequestLeaderTransfer(p.shardID, targetReplicaID)
@@ -324,7 +326,7 @@ func (p *Pollinosis) TransferLeader(timeout time.Duration, targetReplicaID uint6
 // 被增加的节点要在集群内唯一,如果重复了会报错(即使删掉了在重新加也不行 - Raft规范)
 func (p *Pollinosis) AddReplica(timeout time.Duration, targetReplicaID uint64, targetAddress string) error {
 	if p.raft == nil {
-		return errors.New(ErrRaftNil)
+		return ErrRaftNil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -336,7 +338,7 @@ func (p *Pollinosis) AddReplica(timeout time.Duration, targetReplicaID uint64, t
 // 被删除的节点是永久性删除,不可以重复添加(Raft规范)
 func (p *Pollinosis) DeleteReplica(timeout time.Duration, targetReplicaID uint64) error {
 	if p.raft == nil {
-		return errors.New(ErrRaftNil)
+		return ErrRaftNil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -348,7 +350,7 @@ func (p *Pollinosis) DeleteReplica(timeout time.Duration, targetReplicaID uint64
 // 因为Raft节点之间是需要选举和通信的,所以Service.Start之后需要等待Ready后才可以正常使用
 func (p *Pollinosis) Ready(timeout time.Duration) (leaderID uint64, isLeader bool, err error) {
 	if p.raft == nil {
-		return 0, false, errors.New(ErrRaftNil)
+		return 0, false, ErrRaftNil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -400,7 +402,7 @@ func (p *Pollinosis) ReplicaID() uint64 {
 // start 启动实际的Raft服务
 func (p *Pollinosis) start(listener ...EventListener) error {
 	if p.raft != nil {
-		return errors.New(ErrAlreadyExists)
+		return ErrAlreadyExists
 	}
 
 	if len(listener) > 0 {

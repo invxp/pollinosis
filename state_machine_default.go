@@ -2,7 +2,6 @@ package pollinosis
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/lni/dragonboat/v4/statemachine"
 	"io"
 )
@@ -17,7 +16,7 @@ func (sm *defaultStateMachine) stateMachine(_, _ uint64) statemachine.IStateMach
 
 func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Result, error) {
 	if sm.closed.Load() {
-		return statemachine.Result{}, errors.New(ErrRaftClosed)
+		return statemachine.Result{}, ErrRaftClosed
 	}
 	val := &keyValue{}
 	if err := json.Unmarshal(entry.Cmd, val); err != nil {
@@ -32,12 +31,12 @@ func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Re
 
 func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, errors.New(ErrRaftClosed)
+		return nil, ErrRaftClosed
 	}
 
 	key, ok := i.(string)
 	if !ok {
-		return nil, errors.New(ErrKeyInvalid)
+		return nil, ErrKeyInvalid
 	}
 
 	val, exists := sm.kv.Load(key)
@@ -45,14 +44,14 @@ func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
 	defer sm.event.LogRead(key)
 
 	if !exists {
-		return nil, errors.New(ErrKeyNotExist)
+		return nil, ErrKeyNotExist
 	}
 	return val, nil
 }
 
 func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISnapshotFileCollection, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return errors.New(ErrRaftClosed)
+		return ErrRaftClosed
 	}
 	var lst []keyValue
 	sm.kv.Range(func(key, value any) bool {
@@ -72,7 +71,7 @@ func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISn
 
 func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statemachine.SnapshotFile, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return errors.New(ErrRaftClosed)
+		return ErrRaftClosed
 	}
 	data, err := io.ReadAll(reader)
 	if err != nil {
@@ -92,7 +91,7 @@ func (sm *defaultStateMachine) RecoverFromSnapshot(reader io.Reader, _ []statema
 
 func (sm *defaultStateMachine) Close() error {
 	if sm.closed.Load() {
-		return errors.New(ErrRaftClosed)
+		return ErrRaftClosed
 	}
 	sm.closed.Store(true)
 	return nil

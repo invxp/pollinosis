@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/cockroachdb/pebble"
 	"github.com/google/uuid"
@@ -54,7 +53,7 @@ func currentDirName(dir string) (string, error) {
 	}
 
 	if len(data) <= 8 {
-		return "", errors.New(ErrDataError)
+		return "", ErrDataError
 	}
 
 	crc := data[:8]
@@ -65,7 +64,7 @@ func currentDirName(dir string) (string, error) {
 	}
 
 	if !bytes.Equal(crc, h.Sum(nil)[:8]) {
-		return "", errors.New(ErrDataError)
+		return "", ErrDataError
 	}
 
 	return string(content), nil
@@ -106,7 +105,7 @@ func syncDir(dir string) error {
 		return err
 	}
 	if !fileInfo.IsDir() {
-		return errors.New(ErrNotDir)
+		return ErrNotDir
 	}
 	df, err := os.Open(filepath.Clean(dir))
 	if err != nil {
@@ -154,13 +153,13 @@ func (sm *onDiskStateMachine) stateMachine(_, _ uint64) statemachine.IOnDiskStat
 
 func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine.Entry, error) {
 	if sm.closed.Load() {
-		return entry, errors.New(ErrRaftClosed)
+		return entry, ErrRaftClosed
 	}
 
 	lastAppliedIndex := entry[len(entry)-1].Index
 
 	if sm.lastApplied.Load() >= lastAppliedIndex {
-		return entry, errors.New(ErrLastIndex)
+		return entry, ErrLastIndex
 	}
 
 	sm.lastApplied.Store(lastAppliedIndex)
@@ -190,14 +189,14 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 
 func (sm *onDiskStateMachine) Sync() error {
 	if sm.closed.Load() {
-		return errors.New(ErrRaftClosed)
+		return ErrRaftClosed
 	}
 	return nil
 }
 
 func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return errors.New(ErrRaftClosed)
+		return ErrRaftClosed
 	}
 
 	sm.storage.mu.RLock()
@@ -243,14 +242,14 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 
 func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}) error {
 	if sm.closed.Load() {
-		return errors.New(ErrRaftClosed)
+		return ErrRaftClosed
 	}
 	newLastApplied, err := sm.queryAppliedIndex()
 	if err != nil {
 		return err
 	}
 	if sm.lastApplied.Load() > newLastApplied {
-		return errors.New(ErrLastIndex)
+		return ErrLastIndex
 	}
 	sm.lastApplied.Store(newLastApplied)
 
@@ -328,7 +327,7 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 
 func (sm *onDiskStateMachine) PrepareSnapshot() (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, errors.New(ErrRaftClosed)
+		return nil, ErrRaftClosed
 	}
 	return &sm.storage, nil
 }
@@ -409,11 +408,11 @@ func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (uint64, error) {
 
 func (sm *onDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 	if sm.closed.Load() {
-		return nil, errors.New(ErrRaftClosed)
+		return nil, ErrRaftClosed
 	}
 	k, ok := key.(string)
 	if !ok {
-		return nil, errors.New(ErrKeyInvalid)
+		return nil, ErrKeyInvalid
 	}
 
 	val, err := sm.storage.Get([]byte(k))
@@ -421,15 +420,15 @@ func (sm *onDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 	defer sm.event.LogRead(k)
 
 	if err == pebble.ErrNotFound {
-		err = errors.New(ErrKeyNotExist)
+		err = ErrKeyNotExist
 	}
-	
+
 	return val, err
 }
 
 func (sm *onDiskStateMachine) Close() error {
 	if sm.closed.Load() {
-		return errors.New(ErrRaftClosed)
+		return ErrRaftClosed
 	}
 	sm.closed.Store(true)
 	return nil
