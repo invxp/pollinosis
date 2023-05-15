@@ -12,22 +12,17 @@ import (
 	"github.com/lni/dragonboat/v4/statemachine"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync/atomic"
 )
 
 const (
-	innerPrefix = "inner_"
-
+	innerPrefix         = "inner_"
 	appliedIndexKeyName = "applied_index"
-
-	databaseName = "pollinosis"
-
-	current  = "current"
-	updating = "updating"
+	databaseName        = "pollinosis"
+	current             = "current"
+	updating            = "updating"
 )
 
 type onDiskStateMachine struct {
@@ -35,20 +30,6 @@ type onDiskStateMachine struct {
 	lastApplied atomic.Uint64
 	closed      atomic.Bool
 	storage     storage
-}
-
-func executablePath() string {
-	file, err := exec.LookPath(os.Args[0])
-	if err != nil {
-		return ""
-	}
-
-	path, err := filepath.Abs(file)
-	if err != nil {
-		return ""
-	}
-
-	return path[0:strings.LastIndex(path, string(os.PathSeparator))] + string(os.PathSeparator)
 }
 
 func uint64ToByte(value uint64) []byte {
@@ -278,8 +259,8 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 		return err
 	}
 
-	dir := filepath.Join(executablePath(), databaseName)
-	dir += fmt.Sprintf(".%d.%d", sm.replicaID, sm.shardID)
+	dir := filepath.Join(filepath.Join(fullPath(), databaseName), fmt.Sprintf("%d.%d", sm.shardID, sm.replicaID))
+
 	databaseDir := filepath.Join(dir, uuid.NewString())
 	oldDirName, err := currentDirName(filepath.Join(dir, current))
 
@@ -357,8 +338,7 @@ func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (uint64, error) {
 	var err error
 	var idx uint64
 
-	dir := filepath.Join(executablePath(), databaseName)
-	dir += fmt.Sprintf(".%d.%d", sm.replicaID, sm.shardID)
+	dir := filepath.Join(filepath.Join(fullPath(), databaseName), fmt.Sprintf("%d.%d", sm.shardID, sm.replicaID))
 
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		return 0, err

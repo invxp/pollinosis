@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/config"
+	"log"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -101,6 +105,21 @@ type Pollinosis struct {
 	stateMachine interface{}
 }
 
+// fullPath 完整路径
+func fullPath() string {
+	file, err := exec.LookPath(os.Args[0])
+	if err != nil {
+		log.Panic(err)
+	}
+
+	path, err := filepath.Abs(file)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return path[0:strings.LastIndex(path, string(os.PathSeparator))] + string(os.PathSeparator)
+}
+
 // New 创建一个Raft实例
 func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshotEntries, compactionOverhead uint64, bindAddress, dataDir string, join bool, members map[uint64]string) *Pollinosis {
 	if replicaID == 0 || shardID == 0 {
@@ -127,7 +146,16 @@ func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshot
 		CompactionOverhead: compactionOverhead,
 	}
 
-	dir := filepath.Join(dataDir, fmt.Sprintf("%d", replicaID))
+	if !filepath.IsAbs(dataDir) {
+		dataDir = filepath.Join(fullPath(), dataDir)
+	}
+
+	dir := filepath.Join(dataDir, fmt.Sprintf("%d.%d", shardID, replicaID))
+
+	err := os.MkdirAll(filepath.Dir(dir), 0755)
+	if err != nil {
+		panic(err)
+	}
 
 	srv.hostConfig = config.NodeHostConfig{
 		WALDir:              dir,
