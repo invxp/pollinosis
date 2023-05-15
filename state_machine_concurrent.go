@@ -45,8 +45,10 @@ func (sm *concurrentStateMachine) Lookup(i interface{}) (interface{}, error) {
 		return nil, errors.New(ErrKeyInvalid)
 	}
 
-	sm.event.LogRead(key)
 	val, exists := sm.kv.Load(key)
+
+	defer sm.event.LogRead(key)
+
 	if !exists {
 		return nil, errors.New(ErrKeyNotExist)
 	}

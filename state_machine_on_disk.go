@@ -415,8 +415,16 @@ func (sm *onDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 	if !ok {
 		return nil, errors.New(ErrKeyInvalid)
 	}
-	sm.event.LogRead(k)
-	return sm.storage.Get([]byte(k))
+
+	val, err := sm.storage.Get([]byte(k))
+
+	defer sm.event.LogRead(k)
+
+	if err == pebble.ErrNotFound {
+		err = errors.New(ErrKeyNotExist)
+	}
+	
+	return val, err
 }
 
 func (sm *onDiskStateMachine) Close() error {
