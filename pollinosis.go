@@ -272,8 +272,8 @@ type NodeInfo struct {
 }
 
 // NodeInfo 获取集群内所有节点信息
-func (p *Pollinosis) NodeInfo() []NodeInfo {
-	var nodeInfo []NodeInfo
+func (p *Pollinosis) NodeInfo() map[uint64]*NodeInfo {
+	nodeInfo := make(map[uint64]*NodeInfo)
 
 	if p.raft == nil {
 		return nodeInfo
@@ -286,7 +286,7 @@ func (p *Pollinosis) NodeInfo() []NodeInfo {
 	}
 
 	for _, i := range info.ShardInfoList {
-		nodeInfo = append(nodeInfo, NodeInfo{i.Nodes, i.ShardID, i.ReplicaID, i.LeaderID})
+		nodeInfo[i.ShardID] = &NodeInfo{i.Nodes, i.ShardID, i.ReplicaID, i.LeaderID}
 	}
 
 	return nodeInfo

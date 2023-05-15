@@ -387,8 +387,8 @@ func TestDefault_AddRemoveNodeAndGetValue(t *testing.T) {
 		t.Fatal("leaderID was diff", "want", leaderID, "current", newLeaderID)
 	}
 
-	if len(servers[leader].NodeInfo().ShardInfoList[0].Nodes) != 4 {
-		t.Fatal("nodes diff", servers[leader].NodeInfo().ShardInfoList[0])
+	if len(servers[leader].NodeInfo()[100].Nodes) != 4 {
+		t.Fatal("nodes diff", servers[leader].NodeInfo()[100])
 	}
 
 	if value, err = newServer.Get(time.Second*10, "Key"); err != nil || value != wantValue {
@@ -400,8 +400,8 @@ func TestDefault_AddRemoveNodeAndGetValue(t *testing.T) {
 		t.Log("delete replica error", err)
 	}
 
-	if len(servers[leader].NodeInfo().ShardInfoList[0].Nodes) != 3 {
-		t.Fatal("nodes diff", servers[leader].NodeInfo().ShardInfoList[0])
+	if len(servers[leader].NodeInfo()[100].Nodes) != 3 {
+		t.Fatal("nodes diff", servers[leader].NodeInfo()[100])
 	}
 
 	newServer.Stop()
