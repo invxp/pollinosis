@@ -264,12 +264,32 @@ func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err e
 	}
 }
 
+type NodeInfo struct {
+	Nodes     map[uint64]string
+	ShardID   uint64
+	ReplicaID uint64
+	LeaderID  uint64
+}
+
 // NodeInfo 获取集群内所有节点信息
-func (p *Pollinosis) NodeInfo() *dragonboat.NodeHostInfo {
+func (p *Pollinosis) NodeInfo() []NodeInfo {
+	var nodeInfo []NodeInfo
+
 	if p.raft == nil {
-		return nil
+		return nodeInfo
 	}
-	return p.raft.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
+
+	info := p.raft.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
+
+	if info == nil {
+		return nodeInfo
+	}
+
+	for _, i := range info.ShardInfoList {
+		nodeInfo = append(nodeInfo, NodeInfo{i.Nodes, i.ShardID, i.ReplicaID, i.LeaderID})
+	}
+
+	return nodeInfo
 }
 
 // GetValidNodes 获取有效集群成员列表
