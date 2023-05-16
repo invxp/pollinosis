@@ -25,9 +25,9 @@ func (sm *concurrentStateMachine) Update(entries []statemachine.Entry) ([]statem
 			return entries, err
 		}
 
-		sm.event.LogUpdated(val.Key, val.Value, entry.Index)
-
 		sm.kv.Store(val.Key, val.Value)
+
+		sm.event.LogUpdated(val.Key, val.Value, entry.Index)
 	}
 
 	return entries, nil

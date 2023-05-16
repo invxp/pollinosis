@@ -171,11 +171,12 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 				panic("unmarshal data error " + string(e.Cmd))
 			}
 
-			sm.event.LogUpdated(val.Key, val.Value, entry[i].Index)
-
 			if err := batch.Set([]byte(val.Key), []byte(val.Value), &pebble.WriteOptions{Sync: false}); err != nil {
 				panic("store data error " + val.Key + " " + val.Value + " " + err.Error())
 			}
+
+			sm.event.LogUpdated(val.Key, val.Value, entry[i].Index)
+
 			entry[i].Result = statemachine.Result{Value: uint64(len(entry[i].Cmd))}
 		}
 
