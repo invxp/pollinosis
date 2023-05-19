@@ -50,6 +50,7 @@ type NodeInfo struct {
 	ShardID   uint64
 	ReplicaID uint64
 	LeaderID  uint64
+	Term      uint64
 }
 
 // EventListener Raft事件监听
@@ -147,7 +148,7 @@ func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshot
 		panic("electionRTT or heartbeatRTT or rttMillisecond must > 0")
 	}
 
-	if len(bindAddress) == 0 || len(dataDir) == 0 {
+	if len(bindAddress) == 0 {
 		panic("bind address or data dir was nil")
 	}
 
@@ -418,7 +419,7 @@ func (p *Pollinosis) NodeInfo() map[uint64]*NodeInfo {
 	}
 
 	for _, i := range info.ShardInfoList {
-		nodeInfo[i.ShardID] = &NodeInfo{i.Nodes, i.ShardID, i.ReplicaID, i.LeaderID}
+		nodeInfo[i.ShardID] = &NodeInfo{i.Nodes, i.ShardID, i.ReplicaID, i.LeaderID, i.Term}
 	}
 
 	return nodeInfo
