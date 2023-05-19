@@ -24,7 +24,7 @@ func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Re
 	}
 	sm.kv.Store(val.Key, val.Value)
 
-	defer sm.event.LogUpdated(val.Key, val.Value, entry.Index)
+	defer sm.event.LogUpdated(val.Key, val.Value.Value, entry.Index)
 
 	return statemachine.Result{Value: uint64(len(entry.Cmd))}, nil
 }
@@ -55,7 +55,7 @@ func (sm *defaultStateMachine) SaveSnapshot(writer io.Writer, _ statemachine.ISn
 	}
 	var lst []keyValue
 	sm.kv.Range(func(key, value any) bool {
-		lst = append(lst, keyValue{key.(string), value.(string)})
+		lst = append(lst, keyValue{key.(string), value.(values)})
 		return true
 	})
 

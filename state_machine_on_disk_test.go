@@ -189,7 +189,7 @@ func TestServer_StartAndReadyGetSet(t *testing.T) {
 
 	var value string
 	want := "Value"
-	if err = servers[leaderID-1].Set(time.Second*10, "Key", want); err != nil {
+	if err = servers[leaderID-1].Set(time.Second*10, "Key", want, 0); err != nil {
 		t.Fatal(err)
 	}
 	if value, err = servers[leaderID-1].Get(time.Second*10, "Key"); err != nil || value != want {
@@ -350,7 +350,7 @@ func TestOnDisk_AddRemoveNodeAndGetValue(t *testing.T) {
 
 	wantValue := "Value"
 
-	err = servers[follower].Set(time.Second*10, "Key", wantValue)
+	err = servers[follower].Set(time.Second*10, "Key", wantValue, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestOnDisk_Snapshot(t *testing.T) {
 
 	leader := leaderID - 1
 	for i := 0; i < 1000; i++ {
-		if err = servers[leader].Set(time.Second*10, fmt.Sprintf("%d", i), fmt.Sprintf("%d", i)); err != nil {
+		if err = servers[leader].Set(time.Second*10, fmt.Sprintf("%d", i), fmt.Sprintf("%d", i), 0); err != nil {
 			t.Fatal(err)
 		}
 	}

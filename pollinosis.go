@@ -18,7 +18,9 @@ import (
 )
 
 var (
-	ErrKeyNotExist   = errors.New("key is not exists")
+	ErrKeyNotExist   = errors.New("key was not exists")
+	ErrKeyExist      = errors.New("key was exists")
+	ErrKeyExpire     = errors.New("key was expire")
 	ErrRaftClosed    = errors.New("raft was closed")
 	ErrRaftNil       = errors.New("raft was nil")
 	ErrKeyInvalid    = errors.New("key was invalid")
@@ -34,7 +36,20 @@ var (
 // keyValue Raft内部KV数据,用于存储基础数据
 type keyValue struct {
 	Key   string `json:"key"`
-	Value string `json:"value"`
+	Value values `json:"value"`
+}
+
+type values struct {
+	Timestamp       int64  `json:"ts"`
+	TTL             int64  `json:"ttl"`
+	Value           string `json:"value"`
+	DeleteOrExpired bool   `json:"mark"`
+}
+type NodeInfo struct {
+	Nodes     map[uint64]string
+	ShardID   uint64
+	ReplicaID uint64
+	LeaderID  uint64
 }
 
 // EventListener Raft事件监听
@@ -200,7 +215,7 @@ func (p *Pollinosis) Stop() {
 
 // Set 从Raft集群内设置KV
 // 并不是Leader才可以发起,集群内部任意角色都可以
-func (p *Pollinosis) Set(timeout time.Duration, key, value string) error {
+func (p *Pollinosis) Set(timeout time.Duration, key, value string, expireTTLSeconds uint64) error {
 	if p.raft == nil {
 		return ErrRaftNil
 	}
@@ -219,17 +234,52 @@ func (p *Pollinosis) Set(timeout time.Duration, key, value string) error {
 	defer func() {
 		_ = p.raft.SyncCloseSession(ctx, session)
 	}()
-	val := &keyValue{key, value}
+	val := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
 
-	bytes, err := json.Marshal(val)
+	bytes, _ := json.Marshal(val)
+	_, err = p.raft.SyncPropose(ctx, session, bytes)
+	session.ProposalCompleted()
+	return err
+}
+
+// SetNX 从Raft集群内设置KV(Not Exists)
+// 并不是Leader才可以发起,集群内部任意角色都可以
+func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSeconds uint64) error {
+	if p.raft == nil {
+		return ErrRaftNil
+	}
+
+	if len(key) <= 0 {
+		return ErrKeyInvalid
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	session, err := p.raft.SyncGetSession(ctx, p.shardID)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		_ = p.raft.SyncCloseSession(ctx, session)
+	}()
 
-	_, err = p.raft.SyncPropose(ctx, session, bytes)
+	data, err := p.raft.SyncRead(ctx, p.shardID, key)
+
 	if err == nil {
-		session.ProposalCompleted()
+		result, _ := data.(values)
+		if _, e := p.checkValidValue(result); e == nil {
+			return ErrKeyExist
+		}
+	} else if err != ErrKeyNotExist {
+		return err
 	}
+
+	v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
+	bytes, _ := json.Marshal(v)
+	_, err = p.raft.SyncPropose(ctx, session, bytes)
+	session.ProposalCompleted()
+
 	return err
 }
 
@@ -248,27 +298,109 @@ func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err e
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	session, es := p.raft.SyncGetSession(ctx, p.shardID)
+	if es != nil {
+		return "", es
+	}
+
+	defer func() {
+		_ = p.raft.SyncCloseSession(ctx, session)
+	}()
+
 	data, err := p.raft.SyncRead(ctx, p.shardID, key)
 
 	if err != nil {
 		return "", err
 	}
 
-	switch result := data.(type) {
-	case string:
-		return result, nil
-	case []byte:
-		return string(result), nil
-	default:
-		return "", fmt.Errorf("value data error, key: %v, value: %v", key, data)
+	result, _ := data.(values)
+	val, e := p.checkValidValue(result)
+	if e == ErrKeyExpire {
+		v := &keyValue{key, values{0, 0, "", true}}
+		bytes, _ := json.Marshal(v)
+		_, _ = p.raft.SyncPropose(ctx, session, bytes)
+		session.ProposalCompleted()
+		e = ErrKeyNotExist
+		val = ""
 	}
+	return val, e
 }
 
-type NodeInfo struct {
-	Nodes     map[uint64]string
-	ShardID   uint64
-	ReplicaID uint64
-	LeaderID  uint64
+// GetSet 从Raft集群内获取KV(取到了才设置)
+// 当前使用的是线性一致性读
+// 好处是保证一致性的前提下减缓Leader的读数据的IO压力
+func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLSeconds uint64) (string, error) {
+	if p.raft == nil {
+		return "", ErrRaftNil
+	}
+
+	if len(key) <= 0 {
+		return "", ErrKeyInvalid
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	session, err := p.raft.SyncGetSession(ctx, p.shardID)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = p.raft.SyncCloseSession(ctx, session)
+	}()
+
+	data, err := p.raft.SyncRead(ctx, p.shardID, key)
+
+	if err != nil {
+		return "", err
+	}
+
+	result, _ := data.(values)
+	if val, e := p.checkValidValue(result); e == nil {
+		v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
+		bytes, _ := json.Marshal(v)
+		_, err = p.raft.SyncPropose(ctx, session, bytes)
+		session.ProposalCompleted()
+		return val, err
+	}
+
+	return "", ErrKeyNotExist
+}
+
+// Delete 从Raft集群内获取KV(取到了才设置)
+// 当前使用的是线性一致性读
+// 好处是保证一致性的前提下减缓Leader的读数据的IO压力
+func (p *Pollinosis) Delete(timeout time.Duration, key string) error {
+	if p.raft == nil {
+		return ErrRaftNil
+	}
+
+	if len(key) <= 0 {
+		return ErrKeyInvalid
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	session, err := p.raft.SyncGetSession(ctx, p.shardID)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = p.raft.SyncCloseSession(ctx, session)
+	}()
+
+	_, err = p.raft.SyncRead(ctx, p.shardID, key)
+
+	if err != nil {
+		return err
+	}
+
+	v := &keyValue{key, values{0, 0, "", true}}
+	bytes, _ := json.Marshal(v)
+	_, err = p.raft.SyncPropose(ctx, session, bytes)
+	session.ProposalCompleted()
+	return err
 }
 
 // NodeInfo 获取集群内所有节点信息
@@ -446,4 +578,22 @@ func (p *Pollinosis) start(listener ...EventListener) error {
 	default:
 		return fmt.Errorf("unknown driver type: %v", sm)
 	}
+}
+
+func (p *Pollinosis) checkValidValue(value values) (string, error) {
+	if value.DeleteOrExpired {
+		return "", ErrKeyNotExist
+	}
+
+	if value.TTL == 0 {
+		return value.Value, nil
+	}
+
+	if value.TTL > 0 {
+		if time.Now().Sub(time.Unix(value.Timestamp, 0)).Abs().Seconds() >= float64(value.TTL) {
+			return "", ErrKeyExpire
+		}
+	}
+
+	return value.Value, nil
 }

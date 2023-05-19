@@ -195,7 +195,7 @@ func TestConcurrent_GetSet(t *testing.T) {
 		t.Fatal("value must be nil")
 	}
 
-	err = servers[follower].Set(time.Second*10, "Key", wantValue)
+	err = servers[follower].Set(time.Second*10, "Key", wantValue, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func TestConcurrent_AddRemoveNodeAndGetValue(t *testing.T) {
 
 	wantValue := "Value"
 
-	err = servers[follower].Set(time.Second*10, "Key", wantValue)
+	err = servers[follower].Set(time.Second*10, "Key", wantValue, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestConcurrent_Snapshot(t *testing.T) {
 
 	leader := leaderID - 1
 	for i := 0; i < 1000; i++ {
-		if err = servers[leader].Set(time.Second*10, fmt.Sprintf("%d", i), fmt.Sprintf("%d", i)); err != nil {
+		if err = servers[leader].Set(time.Second*10, fmt.Sprintf("%d", i), fmt.Sprintf("%d", i), 0); err != nil {
 			t.Fatal(err)
 		}
 	}

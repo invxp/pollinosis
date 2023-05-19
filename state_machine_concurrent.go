@@ -27,7 +27,7 @@ func (sm *concurrentStateMachine) Update(entries []statemachine.Entry) ([]statem
 
 		sm.kv.Store(val.Key, val.Value)
 
-		sm.event.LogUpdated(val.Key, val.Value, entry.Index)
+		sm.event.LogUpdated(val.Key, val.Value.Value, entry.Index)
 	}
 
 	return entries, nil
@@ -67,7 +67,7 @@ func (sm *concurrentStateMachine) SaveSnapshot(_ interface{}, writer io.Writer, 
 	}
 	var lst []keyValue
 	sm.kv.Range(func(key, value any) bool {
-		lst = append(lst, keyValue{key.(string), value.(string)})
+		lst = append(lst, keyValue{key.(string), value.(values)})
 		return true
 	})
 

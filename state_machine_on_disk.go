@@ -171,11 +171,13 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 				panic("unmarshal data error " + string(e.Cmd))
 			}
 
-			if err := batch.Set([]byte(val.Key), []byte(val.Value), &pebble.WriteOptions{Sync: false}); err != nil {
-				panic("store data error " + val.Key + " " + val.Value + " " + err.Error())
+			v, _ := json.Marshal(val.Value)
+
+			if err := batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
+				panic("store data error " + val.Key + " " + string(v) + " " + err.Error())
 			}
 
-			sm.event.LogUpdated(val.Key, val.Value, entry[i].Index)
+			sm.event.LogUpdated(val.Key, val.Value.Value, entry[i].Index)
 
 			entry[i].Result = statemachine.Result{Value: uint64(len(entry[i].Cmd))}
 		}
@@ -212,20 +214,22 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 	defer func() {
 		_ = iter.Close()
 	}()
-	values := make([]*keyValue, 0)
+	valueList := make([]*keyValue, 0)
 	for iter.First(); iter.Valid(); iter.Next() {
+		v := values{}
+		_ = json.Unmarshal(iter.Value(), &v)
 		val := &keyValue{
 			Key:   string(iter.Key()),
-			Value: string(iter.Value()),
+			Value: v,
 		}
-		values = append(values, val)
+		valueList = append(valueList, val)
 	}
 
-	if _, err := w.Write(uint64ToByte(uint64(len(values)))); err != nil {
+	if _, err := w.Write(uint64ToByte(uint64(len(valueList)))); err != nil {
 		return err
 	}
 
-	for _, kv := range values {
+	for _, kv := range valueList {
 		data, err := json.Marshal(kv)
 		if err != nil {
 			panic("marshal data error " + err.Error())
@@ -304,7 +308,8 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 			if err = json.Unmarshal(data, val); err != nil {
 				panic("unmarshal data length error " + err.Error())
 			}
-			if err = batch.Set([]byte(val.Key), []byte(val.Value), &pebble.WriteOptions{Sync: false}); err != nil {
+			v, _ := json.Marshal(val.Value)
+			if err = batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
 				panic("store data error " + err.Error())
 			}
 		}

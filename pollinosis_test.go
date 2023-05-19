@@ -98,6 +98,12 @@ func TestGetSet(t *testing.T) {
 		log.Fatal(err)
 	}
 
+	defer p.Stop()
+
+	defer func() {
+		_ = os.RemoveAll("1")
+	}()
+
 	log.Println("pollinosis started...")
 
 	if leaderID, isLeader, err := p.Ready(time.Second * 5); err != nil {
@@ -106,17 +112,53 @@ func TestGetSet(t *testing.T) {
 		log.Println("pollinosis ready leaderID", leaderID, "isLeader", isLeader)
 	}
 
-	if err := p.Set(time.Second*5, "K", "V"); err != nil {
+	if err := p.Set(time.Second*5, "K", "V", 1); err != nil {
 		log.Fatal(err)
 	}
 
-	if value, err := p.Get(time.Second*5, "K"); err != nil || value != "V" {
+	time.Sleep(time.Second)
+
+	if err := p.SetNX(time.Second*100, "K", "VVVVV", 1000); err != nil {
+		log.Fatal(err)
+	}
+
+	if value, err := p.Get(time.Second*5, "K"); err != nil || value != "VVVVV" {
 		log.Fatal(err)
 	} else {
 		log.Println("pollinosis get", "K", value)
 	}
 
-	p.Stop()
+	if value, err := p.Get(time.Second*5, "K"); err != nil || value != "VVVVV" {
+		log.Fatal(err)
+	} else {
+		log.Println("pollinosis get", "K", value)
+	}
 
-	_ = os.RemoveAll("1")
+	if _, err := p.GetSet(time.Second*5, "KC", "CCCC", 1000); err == nil {
+		log.Fatal("why exists?")
+	}
+
+	if value, err := p.GetSet(time.Second*5, "K", "CCCC", 1000); err != nil || value != "VVVVV" {
+		log.Fatal(err)
+	} else {
+		log.Println("pollinosis get", "K", value)
+	}
+
+	if value, err := p.GetSet(time.Second*5, "K", "666", 1000); err != nil || value != "CCCC" {
+		log.Fatal(err)
+	} else {
+		log.Println("pollinosis get", "K", value)
+	}
+
+	if err := p.Delete(time.Second*5, "KFFFF"); err == nil {
+		log.Fatal("why exists?")
+	}
+
+	if err := p.Delete(time.Second*5, "K"); err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := p.Get(time.Second*5, "K"); err == nil {
+		log.Fatal("why exists?")
+	}
 }
