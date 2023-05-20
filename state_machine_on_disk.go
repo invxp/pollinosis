@@ -173,8 +173,14 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 
 			v, _ := json.Marshal(val.Value)
 
-			if err := batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
-				panic("store data error " + val.Key + " " + string(v) + " " + err.Error())
+			if val.Value.DeleteOrExpired {
+				if err := batch.Delete([]byte(val.Key), &pebble.WriteOptions{Sync: false}); err != nil {
+					panic("remove data error " + val.Key + " " + string(v) + " " + err.Error())
+				}
+			} else {
+				if err := batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
+					panic("store data error " + val.Key + " " + string(v) + " " + err.Error())
+				}
 			}
 
 			sm.event.LogUpdated(val.Key, val.Value.Value, entry[i].Index)
@@ -263,7 +269,7 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 		return err
 	}
 
-	dir := filepath.Join(filepath.Join(fullPath(), databaseName), fmt.Sprintf("%d.%d", sm.shardID, sm.replicaID))
+	dir := filepath.Join(filepath.Join(sm.hostConfig.NodeHostDir, databaseName), fmt.Sprintf("%d.%d", sm.shardID, sm.replicaID))
 
 	databaseDir := filepath.Join(dir, uuid.NewString())
 	oldDirName, err := currentDirName(filepath.Join(dir, current))
@@ -309,6 +315,9 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 				panic("unmarshal data length error " + err.Error())
 			}
 			v, _ := json.Marshal(val.Value)
+			if val.Value.DeleteOrExpired {
+				continue
+			}
 			if err = batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
 				panic("store data error " + err.Error())
 			}
@@ -343,7 +352,7 @@ func (sm *onDiskStateMachine) Open(_ <-chan struct{}) (uint64, error) {
 	var err error
 	var idx uint64
 
-	dir := filepath.Join(filepath.Join(fullPath(), databaseName), fmt.Sprintf("%d.%d", sm.shardID, sm.replicaID))
+	dir := filepath.Join(filepath.Join(sm.hostConfig.NodeHostDir, databaseName), fmt.Sprintf("%d.%d", sm.shardID, sm.replicaID))
 
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		return 0, err

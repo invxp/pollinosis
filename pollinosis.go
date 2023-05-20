@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lni/dragonboat/v4"
+	"github.com/lni/dragonboat/v4/client"
 	"github.com/lni/dragonboat/v4/config"
 	"log"
 	"os"
@@ -228,18 +229,37 @@ func (p *Pollinosis) Set(timeout time.Duration, key, value string, expireTTLSeco
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	session, err := p.raft.SyncGetSession(ctx, p.shardID)
+	var session *client.Session
+	var err error
+	var closeSession = true
+
+	switch p.stateMachine.(type) {
+	case *defaultStateMachine, *concurrentStateMachine:
+		session, err = p.raft.SyncGetSession(ctx, p.shardID)
+	case *onDiskStateMachine:
+		session = p.raft.GetNoOPSession(p.shardID)
+		closeSession = false
+	}
+
 	if err != nil {
 		return err
 	}
+
 	defer func() {
-		_ = p.raft.SyncCloseSession(ctx, session)
+		if closeSession {
+			_ = p.raft.SyncCloseSession(ctx, session)
+		}
 	}()
+
 	val := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
 
 	bytes, _ := json.Marshal(val)
 	_, err = p.raft.SyncPropose(ctx, session, bytes)
-	session.ProposalCompleted()
+
+	if closeSession {
+		session.ProposalCompleted()
+	}
+
 	return err
 }
 
@@ -257,12 +277,25 @@ func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSe
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	session, err := p.raft.SyncGetSession(ctx, p.shardID)
+	var session *client.Session
+	var err error
+	var closeSession = true
+
+	switch p.stateMachine.(type) {
+	case *defaultStateMachine, *concurrentStateMachine:
+		session, err = p.raft.SyncGetSession(ctx, p.shardID)
+	case *onDiskStateMachine:
+		session = p.raft.GetNoOPSession(p.shardID)
+		closeSession = false
+	}
+
 	if err != nil {
 		return err
 	}
 	defer func() {
-		_ = p.raft.SyncCloseSession(ctx, session)
+		if closeSession {
+			_ = p.raft.SyncCloseSession(ctx, session)
+		}
 	}()
 
 	data, err := p.raft.SyncRead(ctx, p.shardID, key)
@@ -279,7 +312,10 @@ func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSe
 	v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
 	bytes, _ := json.Marshal(v)
 	_, err = p.raft.SyncPropose(ctx, session, bytes)
-	session.ProposalCompleted()
+
+	if closeSession {
+		session.ProposalCompleted()
+	}
 
 	return err
 }
@@ -299,13 +335,25 @@ func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err e
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	session, es := p.raft.SyncGetSession(ctx, p.shardID)
-	if es != nil {
-		return "", es
+	var session *client.Session
+	var closeSession = true
+
+	switch p.stateMachine.(type) {
+	case *defaultStateMachine, *concurrentStateMachine:
+		session, err = p.raft.SyncGetSession(ctx, p.shardID)
+	case *onDiskStateMachine:
+		session = p.raft.GetNoOPSession(p.shardID)
+		closeSession = false
+	}
+
+	if err != nil {
+		return "", err
 	}
 
 	defer func() {
-		_ = p.raft.SyncCloseSession(ctx, session)
+		if closeSession {
+			_ = p.raft.SyncCloseSession(ctx, session)
+		}
 	}()
 
 	data, err := p.raft.SyncRead(ctx, p.shardID, key)
@@ -320,7 +368,9 @@ func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err e
 		v := &keyValue{key, values{0, 0, "", true}}
 		bytes, _ := json.Marshal(v)
 		_, _ = p.raft.SyncPropose(ctx, session, bytes)
-		session.ProposalCompleted()
+		if closeSession {
+			session.ProposalCompleted()
+		}
 		e = ErrKeyNotExist
 		val = ""
 	}
@@ -342,12 +392,25 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	session, err := p.raft.SyncGetSession(ctx, p.shardID)
+	var session *client.Session
+	var err error
+	var closeSession = true
+
+	switch p.stateMachine.(type) {
+	case *defaultStateMachine, *concurrentStateMachine:
+		session, err = p.raft.SyncGetSession(ctx, p.shardID)
+	case *onDiskStateMachine:
+		session = p.raft.GetNoOPSession(p.shardID)
+		closeSession = false
+	}
+
 	if err != nil {
 		return "", err
 	}
 	defer func() {
-		_ = p.raft.SyncCloseSession(ctx, session)
+		if closeSession {
+			_ = p.raft.SyncCloseSession(ctx, session)
+		}
 	}()
 
 	data, err := p.raft.SyncRead(ctx, p.shardID, key)
@@ -361,7 +424,11 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 		v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
 		bytes, _ := json.Marshal(v)
 		_, err = p.raft.SyncPropose(ctx, session, bytes)
-		session.ProposalCompleted()
+
+		if closeSession {
+			session.ProposalCompleted()
+		}
+
 		return val, err
 	}
 
@@ -383,12 +450,25 @@ func (p *Pollinosis) Delete(timeout time.Duration, key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	session, err := p.raft.SyncGetSession(ctx, p.shardID)
+	var session *client.Session
+	var err error
+	var closeSession = true
+
+	switch p.stateMachine.(type) {
+	case *defaultStateMachine, *concurrentStateMachine:
+		session, err = p.raft.SyncGetSession(ctx, p.shardID)
+	case *onDiskStateMachine:
+		session = p.raft.GetNoOPSession(p.shardID)
+		closeSession = false
+	}
+
 	if err != nil {
 		return err
 	}
 	defer func() {
-		_ = p.raft.SyncCloseSession(ctx, session)
+		if closeSession {
+			_ = p.raft.SyncCloseSession(ctx, session)
+		}
 	}()
 
 	_, err = p.raft.SyncRead(ctx, p.shardID, key)
@@ -400,7 +480,9 @@ func (p *Pollinosis) Delete(timeout time.Duration, key string) error {
 	v := &keyValue{key, values{0, 0, "", true}}
 	bytes, _ := json.Marshal(v)
 	_, err = p.raft.SyncPropose(ctx, session, bytes)
-	session.ProposalCompleted()
+	if closeSession {
+		session.ProposalCompleted()
+	}
 	return err
 }
 
