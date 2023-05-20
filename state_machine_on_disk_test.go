@@ -23,7 +23,7 @@ func TestOnDisk_StartAndReady(t *testing.T) {
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members))
+		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members, 1024*1024))
 	}
 
 	for _, srv := range servers {
@@ -85,7 +85,7 @@ func TestOnDisk_StartAndReadyToListener(t *testing.T) {
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members))
+		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members, 1024*1024))
 	}
 
 	cs := CustomListener{}
@@ -148,7 +148,7 @@ func TestServer_StartAndReadyGetSet(t *testing.T) {
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members))
+		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members, 1024*1024))
 	}
 
 	for _, srv := range servers {
@@ -219,7 +219,7 @@ func TestOnDisk_TransferLeader(t *testing.T) {
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members))
+		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members, 1024*1024))
 	}
 
 	for _, srv := range servers {
@@ -303,7 +303,7 @@ func TestOnDisk_AddRemoveNodeAndGetValue(t *testing.T) {
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members))
+		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members, 1024*1024))
 	}
 
 	for _, srv := range servers {
@@ -360,7 +360,7 @@ func TestOnDisk_AddRemoveNodeAndGetValue(t *testing.T) {
 		t.Fatal(err, value, wantValue)
 	}
 
-	newServer := New(total+1, 100, 10, 1, 200, 0, 100, fmt.Sprintf("0.0.0.0:%d", 10000+total+1), fmt.Sprintf("raft_%d", total+1), true, nil)
+	newServer := New(total+1, 100, 10, 1, 200, 0, 100, fmt.Sprintf("0.0.0.0:%d", 10000+total+1), fmt.Sprintf("raft_%d", total+1), true, nil, 1024*1024)
 
 	_ = os.RemoveAll(fmt.Sprintf("raft_%d", total+1))
 	_ = os.RemoveAll(fmt.Sprintf("%s.%d.%d", databaseName, total+1, 100))
@@ -429,7 +429,7 @@ func TestOnDisk_Snapshot(t *testing.T) {
 	}
 
 	for id, address := uint64(1), uint64(10001); id <= total; id, address = id+1, address+1 {
-		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members))
+		servers = append(servers, New(id, 100, 10, 1, 200, 0, 100, members[id], fmt.Sprintf("raft_%d", id), false, members, 1024*1024))
 	}
 
 	for _, srv := range servers {

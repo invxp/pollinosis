@@ -140,7 +140,7 @@ func fullPath() string {
 }
 
 // New 创建一个Raft实例
-func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshotEntries, compactionOverhead uint64, bindAddress, dataDir string, join bool, members map[uint64]string) *Pollinosis {
+func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshotEntries, compactionOverhead uint64, bindAddress, dataDir string, join bool, members map[uint64]string, maxMemorySize uint64) *Pollinosis {
 	if replicaID == 0 || shardID == 0 {
 		panic("replicaID or shardID must > 0")
 	}
@@ -156,13 +156,15 @@ func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshot
 	srv := &Pollinosis{replicaID: replicaID, shardID: shardID, join: join, members: members, event: defaultEvent}
 
 	srv.raftConfig = config.Config{
-		ReplicaID:          replicaID,
-		ShardID:            shardID,
-		CheckQuorum:        true,
-		ElectionRTT:        electionRTT,
-		HeartbeatRTT:       heartbeatRTT,
-		SnapshotEntries:    snapshotEntries,
-		CompactionOverhead: compactionOverhead,
+		ReplicaID:           replicaID,
+		ShardID:             shardID,
+		CheckQuorum:         true,
+		ElectionRTT:         electionRTT,
+		HeartbeatRTT:        heartbeatRTT,
+		SnapshotEntries:     snapshotEntries,
+		CompactionOverhead:  compactionOverhead,
+		OrderedConfigChange: true,
+		MaxInMemLogSize:     maxMemorySize,
 	}
 
 	if !filepath.IsAbs(dataDir) {
