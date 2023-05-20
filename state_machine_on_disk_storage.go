@@ -27,7 +27,11 @@ func (s *storage) Get(key []byte) ([]byte, error) {
 		_ = closer.Close()
 	}()
 
-	return val, nil
+	bytes := make([]byte, len(val))
+
+	copy(bytes, val)
+
+	return bytes, nil
 }
 
 func (s *storage) Close() error {
