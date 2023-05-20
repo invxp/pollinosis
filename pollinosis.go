@@ -301,7 +301,13 @@ func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSe
 	data, err := p.raft.SyncRead(ctx, p.shardID, key)
 
 	if err == nil {
-		result, _ := data.(values)
+		var result values
+		switch d := data.(type) {
+		case values:
+			result = d
+		case []byte:
+			_ = json.Unmarshal(d, &result)
+		}
 		if _, e := p.checkValidValue(result); e == nil {
 			return ErrKeyExist
 		}
@@ -362,7 +368,14 @@ func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err e
 		return "", err
 	}
 
-	result, _ := data.(values)
+	var result values
+	switch d := data.(type) {
+	case values:
+		result = d
+	case []byte:
+		_ = json.Unmarshal(d, &result)
+	}
+
 	val, e := p.checkValidValue(result)
 	if e == ErrKeyExpire {
 		v := &keyValue{key, values{0, 0, "", true}}
@@ -419,7 +432,14 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 		return "", err
 	}
 
-	result, _ := data.(values)
+	var result values
+	switch d := data.(type) {
+	case values:
+		result = d
+	case []byte:
+		_ = json.Unmarshal(d, &result)
+	}
+
 	if val, e := p.checkValidValue(result); e == nil {
 		v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
 		bytes, _ := json.Marshal(v)
