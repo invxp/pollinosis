@@ -200,6 +200,16 @@ func (sm *onDiskStateMachine) Sync() error {
 	if sm.closed.Load() {
 		return ErrRaftClosed
 	}
+
+	iter := sm.storage.db.NewIter(&pebble.IterOptions{OnlyReadGuaranteedDurable: true})
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.Compare(iter.Key(), []byte(innerPrefix+appliedIndexKeyName)) == 0 {
+			continue
+		}
+		sm.event.LogUpdated(string(iter.Key()), string(iter.Value()), 0)
+	}
+
 	return nil
 }
 
@@ -321,6 +331,8 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 			if err = batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
 				panic("store data error " + err.Error())
 			}
+			sm.event.LogUpdated(val.Key, val.Value.Value, 0)
+
 		}
 	})
 

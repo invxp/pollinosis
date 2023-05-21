@@ -96,7 +96,7 @@ func TestGetSet(t *testing.T) {
 	// join - 是否为新增的节点
 	p := New(1, 100, 10, 2, 200, 0, 1000, "127.0.0.1:10001", ".", false, map[uint64]string{1: "127.0.0.1:10001"}, 1024*1024)
 
-	if err := p.Start(&CustomListener{}); err != nil {
+	if err := p.StartOnDisk(&CustomListener{}); err != nil {
 		log.Fatal(err)
 	}
 
