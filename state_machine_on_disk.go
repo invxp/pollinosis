@@ -211,6 +211,8 @@ func (sm *onDiskStateMachine) Sync() error {
 			continue
 		}
 
+		sm.kv.Store(string(iter.Key()), string(iter.Value()))
+
 		for _, event := range sm.event {
 			event.LogUpdated(string(iter.Key()), string(iter.Value()), 0)
 		}
