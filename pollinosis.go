@@ -115,7 +115,7 @@ type Pollinosis struct {
 	raft *dragonboat.NodeHost
 
 	// event 事件监听器,有一个默认的,可自定义实现
-	event EventListener
+	event []EventListener
 
 	// kv 用于持久化数据
 	kv sync.Map
@@ -153,7 +153,7 @@ func New(replicaID, shardID, electionRTT, heartbeatRTT, rttMillisecond, snapshot
 		panic("bind address or data dir was nil")
 	}
 
-	srv := &Pollinosis{replicaID: replicaID, shardID: shardID, join: join, members: members, event: defaultEvent}
+	srv := &Pollinosis{replicaID: replicaID, shardID: shardID, join: join, members: members, event: []EventListener{defaultEvent}}
 
 	srv.raftConfig = config.Config{
 		ReplicaID:           replicaID,
@@ -508,6 +508,35 @@ func (p *Pollinosis) Delete(timeout time.Duration, key string) error {
 	return err
 }
 
+// KeyValues 从Raft集群内获取全部KV
+// 当前使用的是线性一致性读
+// 好处是保证一致性的前提下减缓Leader的读数据的IO压力
+func (p *Pollinosis) KeyValues() (map[string]string, error) {
+	if p.raft == nil {
+		return nil, ErrRaftNil
+	}
+
+	m := make(map[string]string)
+
+	p.kv.Range(func(key, value any) bool {
+		var result values
+		switch d := value.(type) {
+		case values:
+			result = d
+		case []byte:
+			_ = json.Unmarshal(d, &result)
+		}
+
+		_, e := p.checkValidValue(result)
+		if e == nil {
+			m[key.(string)] = result.Value
+		}
+		return true
+	})
+
+	return m, nil
+}
+
 // NodeInfo 获取集群内所有节点信息
 func (p *Pollinosis) NodeInfo() map[uint64]*NodeInfo {
 	nodeInfo := make(map[uint64]*NodeInfo)
@@ -662,9 +691,7 @@ func (p *Pollinosis) start(listener ...EventListener) error {
 		return ErrAlreadyExists
 	}
 
-	if len(listener) > 0 {
-		p.event = listener[0]
-	}
+	p.event = append(p.event, listener...)
 
 	raft, err := dragonboat.NewNodeHost(p.hostConfig)
 	if err != nil {

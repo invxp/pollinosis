@@ -163,4 +163,6 @@ func TestGetSet(t *testing.T) {
 	if _, err := p.Get(time.Second*5, "K"); err == nil {
 		log.Fatal("why exists?")
 	}
+
+	log.Println(p.KeyValues())
 }

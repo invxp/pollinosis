@@ -27,7 +27,9 @@ func (sm *concurrentStateMachine) Update(entries []statemachine.Entry) ([]statem
 
 		sm.kv.Store(val.Key, val.Value)
 
-		sm.event.LogUpdated(val.Key, val.Value.Value, entry.Index)
+		for _, event := range sm.event {
+			event.LogUpdated(val.Key, val.Value.Value, entry.Index)
+		}
 	}
 
 	return entries, nil
@@ -46,7 +48,9 @@ func (sm *concurrentStateMachine) Lookup(i interface{}) (interface{}, error) {
 
 	val, exists := sm.kv.Load(key)
 
-	defer sm.event.LogRead(key)
+	for _, event := range sm.event {
+		event.LogRead(key)
+	}
 
 	if !exists {
 		return nil, ErrKeyNotExist

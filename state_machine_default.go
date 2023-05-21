@@ -24,7 +24,9 @@ func (sm *defaultStateMachine) Update(entry statemachine.Entry) (statemachine.Re
 	}
 	sm.kv.Store(val.Key, val.Value)
 
-	defer sm.event.LogUpdated(val.Key, val.Value.Value, entry.Index)
+	for _, event := range sm.event {
+		event.LogUpdated(val.Key, val.Value.Value, entry.Index)
+	}
 
 	return statemachine.Result{Value: uint64(len(entry.Cmd))}, nil
 }
@@ -41,7 +43,9 @@ func (sm *defaultStateMachine) Lookup(i interface{}) (interface{}, error) {
 
 	val, exists := sm.kv.Load(key)
 
-	defer sm.event.LogRead(key)
+	for _, event := range sm.event {
+		event.LogRead(key)
+	}
 
 	if !exists {
 		return nil, ErrKeyNotExist

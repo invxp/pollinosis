@@ -181,9 +181,12 @@ func (sm *onDiskStateMachine) Update(entry []statemachine.Entry) ([]statemachine
 				if err := batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
 					panic("store data error " + val.Key + " " + string(v) + " " + err.Error())
 				}
+				sm.kv.Store(val.Key, val.Value)
 			}
 
-			sm.event.LogUpdated(val.Key, val.Value.Value, entry[i].Index)
+			for _, event := range sm.event {
+				event.LogUpdated(val.Key, val.Value.Value, entry[i].Index)
+			}
 
 			entry[i].Result = statemachine.Result{Value: uint64(len(entry[i].Cmd))}
 		}
@@ -207,7 +210,10 @@ func (sm *onDiskStateMachine) Sync() error {
 		if bytes.Compare(iter.Key(), []byte(innerPrefix+appliedIndexKeyName)) == 0 {
 			continue
 		}
-		sm.event.LogUpdated(string(iter.Key()), string(iter.Value()), 0)
+
+		for _, event := range sm.event {
+			event.LogUpdated(string(iter.Key()), string(iter.Value()), 0)
+		}
 	}
 
 	return nil
@@ -239,6 +245,7 @@ func (sm *onDiskStateMachine) SaveSnapshot(_ interface{}, w io.Writer, _ <-chan 
 			Value: v,
 		}
 		valueList = append(valueList, val)
+		sm.kv.Store(val.Key, val.Value)
 	}
 
 	if _, err := w.Write(uint64ToByte(uint64(len(valueList)))); err != nil {
@@ -328,10 +335,16 @@ func (sm *onDiskStateMachine) RecoverFromSnapshot(r io.Reader, _ <-chan struct{}
 			if val.Value.DeleteOrExpired {
 				continue
 			}
+
+			sm.kv.Store(val.Key, val.Value)
+
 			if err = batch.Set([]byte(val.Key), v, &pebble.WriteOptions{Sync: false}); err != nil {
 				panic("store data error " + err.Error())
 			}
-			sm.event.LogUpdated(val.Key, val.Value.Value, 0)
+
+			for _, event := range sm.event {
+				event.LogUpdated(val.Key, val.Value.Value, 0)
+			}
 
 		}
 	})
@@ -444,7 +457,9 @@ func (sm *onDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 
 	val, err := sm.storage.Get([]byte(k))
 
-	defer sm.event.LogRead(k)
+	for _, event := range sm.event {
+		event.LogRead(k)
+	}
 
 	if err == pebble.ErrNotFound {
 		err = ErrKeyNotExist
