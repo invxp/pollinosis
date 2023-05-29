@@ -395,7 +395,7 @@ func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err e
 // GetSet 从Raft集群内获取KV(取到了才设置)
 // 当前使用的是线性一致性读
 // 好处是保证一致性的前提下减缓Leader的读数据的IO压力
-func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLSeconds uint64, exceptValue ...string) (string, error) {
+func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLSeconds uint64, expectValue ...string) (string, error) {
 	if p.raft == nil {
 		return "", ErrRaftNil
 	}
@@ -444,10 +444,10 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 
 	if val, e := p.checkValidValue(result); e == nil {
 		modify := true
-		if len(exceptValue) > 0 {
+		if len(expectValue) > 0 {
 			modify = false
 		}
-		for _, v := range exceptValue {
+		for _, v := range expectValue {
 			if v == val {
 				modify = true
 				break
@@ -475,7 +475,7 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 // Delete 从Raft集群内获取KV(取到了才设置)
 // 当前使用的是线性一致性读
 // 好处是保证一致性的前提下减缓Leader的读数据的IO压力
-func (p *Pollinosis) Delete(timeout time.Duration, key string, exceptValue ...string) error {
+func (p *Pollinosis) Delete(timeout time.Duration, key string, expectValue ...string) error {
 	if p.raft == nil {
 		return ErrRaftNil
 	}
@@ -524,10 +524,10 @@ func (p *Pollinosis) Delete(timeout time.Duration, key string, exceptValue ...st
 
 	if val, e := p.checkValidValue(result); e == nil {
 		modify := true
-		if len(exceptValue) > 0 {
+		if len(expectValue) > 0 {
 			modify = false
 		}
-		for _, v := range exceptValue {
+		for _, v := range expectValue {
 			if v == val {
 				modify = true
 				break
