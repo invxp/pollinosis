@@ -267,13 +267,13 @@ func (p *Pollinosis) Set(timeout time.Duration, key, value string, expireTTLSeco
 
 // SetNX 从Raft集群内设置KV(Not Exists)
 // 并不是Leader才可以发起,集群内部任意角色都可以
-func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSeconds uint64) error {
+func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSeconds uint64) (string, error) {
 	if p.raft == nil {
-		return ErrRaftNil
+		return "", ErrRaftNil
 	}
 
 	if len(key) <= 0 {
-		return ErrKeyInvalid
+		return "", ErrKeyInvalid
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -292,7 +292,7 @@ func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSe
 	}
 
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() {
 		if closeSession {
@@ -311,10 +311,10 @@ func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSe
 			_ = json.Unmarshal(d, &result)
 		}
 		if _, e := p.checkValidValue(result); e == nil {
-			return ErrKeyExist
+			return result.Value, ErrKeyExist
 		}
 	} else if err != ErrKeyNotExist {
-		return err
+		return "", err
 	}
 
 	v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
@@ -325,7 +325,7 @@ func (p *Pollinosis) SetNX(timeout time.Duration, key, value string, expireTTLSe
 		session.ProposalCompleted()
 	}
 
-	return err
+	return value, err
 }
 
 // Get 从Raft集群内获取KV

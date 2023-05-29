@@ -120,7 +120,7 @@ func TestGetSet(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	if err := p.SetNX(time.Second*100, "K", "VVVVV", 1000); err != nil {
+	if _, err := p.SetNX(time.Second*100, "K", "VVVVV", 1000); err != nil {
 		log.Fatal(err)
 	}
 
