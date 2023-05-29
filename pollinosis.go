@@ -31,7 +31,7 @@ var (
 	ErrNotDir        = errors.New("not dir")
 	ErrLastIndex     = errors.New("last index error")
 	ErrNotReady      = dragonboat.ErrShardNotReady
-	ErrTimeout       = dragonboat.ErrTimeout
+	ErrNotExcept     = errors.New("not except")
 )
 
 // keyValue Raft内部KV数据,用于存储基础数据
@@ -395,7 +395,7 @@ func (p *Pollinosis) Get(timeout time.Duration, key string) (value string, err e
 // GetSet 从Raft集群内获取KV(取到了才设置)
 // 当前使用的是线性一致性读
 // 好处是保证一致性的前提下减缓Leader的读数据的IO压力
-func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLSeconds uint64) (string, error) {
+func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLSeconds uint64, exceptValue ...string) (string, error) {
 	if p.raft == nil {
 		return "", ErrRaftNil
 	}
@@ -443,9 +443,24 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 	}
 
 	if val, e := p.checkValidValue(result); e == nil {
-		v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
-		bytes, _ := json.Marshal(v)
-		_, err = p.raft.SyncPropose(ctx, session, bytes)
+		modify := true
+		if len(exceptValue) > 0 {
+			modify = false
+		}
+		for _, v := range exceptValue {
+			if v == val {
+				modify = true
+				break
+			}
+		}
+
+		if modify {
+			v := &keyValue{key, values{time.Now().Unix(), int64(expireTTLSeconds), value, false}}
+			bytes, _ := json.Marshal(v)
+			_, err = p.raft.SyncPropose(ctx, session, bytes)
+		} else {
+			err = ErrNotExcept
+		}
 
 		if closeSession {
 			session.ProposalCompleted()
@@ -460,7 +475,7 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 // Delete 从Raft集群内获取KV(取到了才设置)
 // 当前使用的是线性一致性读
 // 好处是保证一致性的前提下减缓Leader的读数据的IO压力
-func (p *Pollinosis) Delete(timeout time.Duration, key string) error {
+func (p *Pollinosis) Delete(timeout time.Duration, key string, exceptValue ...string) error {
 	if p.raft == nil {
 		return ErrRaftNil
 	}
@@ -493,18 +508,49 @@ func (p *Pollinosis) Delete(timeout time.Duration, key string) error {
 		}
 	}()
 
-	_, err = p.raft.SyncRead(ctx, p.shardID, key)
+	data, err := p.raft.SyncRead(ctx, p.shardID, key)
 
 	if err != nil {
 		return err
 	}
 
-	v := &keyValue{key, values{0, 0, "", true}}
-	bytes, _ := json.Marshal(v)
-	_, err = p.raft.SyncPropose(ctx, session, bytes)
-	if closeSession {
-		session.ProposalCompleted()
+	var result values
+	switch d := data.(type) {
+	case values:
+		result = d
+	case []byte:
+		_ = json.Unmarshal(d, &result)
 	}
+
+	if val, e := p.checkValidValue(result); e == nil {
+		modify := true
+		if len(exceptValue) > 0 {
+			modify = false
+		}
+		for _, v := range exceptValue {
+			if v == val {
+				modify = true
+				break
+			}
+		}
+
+		if modify {
+			v := &keyValue{key, values{0, 0, "", true}}
+			bytes, _ := json.Marshal(v)
+			_, err = p.raft.SyncPropose(ctx, session, bytes)
+		} else {
+			err = ErrNotExcept
+		}
+
+		if closeSession {
+			session.ProposalCompleted()
+		}
+	} else if e == ErrKeyExpire {
+		return nil
+	} else {
+		return e
+	}
+
 	return err
 }
 
