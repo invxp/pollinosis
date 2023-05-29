@@ -30,8 +30,7 @@ var (
 	ErrDataError     = errors.New("data error")
 	ErrNotDir        = errors.New("not dir")
 	ErrLastIndex     = errors.New("last index error")
-	ErrNotReady      = dragonboat.ErrShardNotReady
-	ErrNotExcept     = errors.New("not except")
+	ErrNotExpect     = errors.New("not expect")
 )
 
 // keyValue Raft内部KV数据,用于存储基础数据
@@ -459,7 +458,7 @@ func (p *Pollinosis) GetSet(timeout time.Duration, key, value string, expireTTLS
 			bytes, _ := json.Marshal(v)
 			_, err = p.raft.SyncPropose(ctx, session, bytes)
 		} else {
-			err = ErrNotExcept
+			err = ErrNotExpect
 		}
 
 		if closeSession {
@@ -539,7 +538,7 @@ func (p *Pollinosis) Delete(timeout time.Duration, key string, expectValue ...st
 			bytes, _ := json.Marshal(v)
 			_, err = p.raft.SyncPropose(ctx, session, bytes)
 		} else {
-			err = ErrNotExcept
+			err = ErrNotExpect
 		}
 
 		if closeSession {
